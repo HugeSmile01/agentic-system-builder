@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic System Builder</title>
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --border: #1f2933;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --code-bg: #020617;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #020617, #0f172a);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+
+    label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 140px;
+      resize: vertical;
+      padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9rem;
+      background: var(--code-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: var(--accent);
+      color: #020617;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+    }
+
+    button.secondary {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    button.secondary:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    pre {
+      margin-top: 20px;
+      padding: 16px;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.3rem;
+      }
+      .container {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1 style="margin-left: 5px;">Agentic System Builder</h1>
+    <hr>
+    <div class="subtitle">
+      Built by John Rish Ladica • SLSU-HC<br>
+      Design AI-powered full-stack systems from a single prompt
+    </div>
+
+    <label for="prompt">System Prompt</label>
+    <textarea
+      id="prompt"
+      placeholder="Example: Build a multi-agent system for emergency alerts with planner, executor, and reviewer roles..."
+    ></textarea>
+
+    <div class="actions">
+      <button onclick="build()">Build System</button>
+      <button class="secondary" onclick="clearOutput()">Clear</button>
+    </div>
+
+    <pre id="output">// Output will appear here</pre>
+  </div>
+
+  <script>
+    async function build() {
+      const output = document.getElementById("output");
+      const prompt = document.getElementById("prompt").value.trim();
+
+      if (!prompt) {
+        output.textContent = "Please enter a system description.";
+        return;
+      }
+
+      document.body.classList.add("loading");
+      output.textContent = "Building agentic system...";
+
+      try {
+        const res = await fetch("/agent", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer devkey"
+          },
+          body: JSON.stringify({ prompt })
+        });
+
+        const text = await res.text();
+        output.textContent = text || "Empty response received.";
+      } catch (err) {
+        output.textContent = "Error: " + err.message;
+      } finally {
+        document.body.classList.remove("loading");
+      }
+    }
+
+    function clearOutput() {
+      document.getElementById("output").textContent = "// Output cleared";
+    }
+  </script>
+</body>
+</html>
