@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic System Builder</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #0f1115;
+  --panel: #1b1f2a;
+  --text: #e6e6e6;
+  --accent: #4da3ff;
+  --muted: #8b93a7;
+  --border: #2b3245;
+}
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+header {
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, #1d2230, #0f1115);
+  border-bottom: 1px solid var(--border);
+}
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  padding: 2rem;
+}
+section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.75rem;
+}
+input, textarea, select {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #10131a;
+  color: var(--text);
+}
+button {
+  background: var(--accent);
+  color: #0b0d12;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin-top: 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+pre {
+  background: #0b0d12;
+  border-radius: 10px;
+  padding: 0.75rem;
+  max-height: 240px;
+  overflow: auto;
+}
+.flex {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+.status {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+small {
+  color: var(--muted);
+}
+@media (max-width: 768px) {
+  header {
+    padding: 1rem 1.25rem;
+  }
+  main {
+    padding: 1.25rem;
+  }
+  .flex {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  button {
+    width: 100%;
+  }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Agentic System Builder</h1>
+  <p class="status" id="health">Loading health...</p>
+</header>
+<main>
+  <section>
+    <h2>Authentication</h2>
+    <label>API Key</label>
+    <input id="apiKey" placeholder="Bearer token" />
+    <label>Base URL</label>
+    <input id="baseUrl" value="" placeholder="Leave blank for same origin" />
+    <button class="secondary" onclick="saveSettings()">Save Settings</button>
+  </section>
+
+  <section>
+    <h2>Agent Command</h2>
+    <label>Prompt</label>
+    <textarea id="agentPrompt" rows="5" placeholder="Create a new task for deploying the app"></textarea>
+    <button onclick="runAgent()">Run Agent</button>
+    <pre id="agentOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Task Manager</h2>
+    <div class="flex">
+      <button onclick="listTasks()">List</button>
+      <button class="secondary" onclick="createTask()">Create</button>
+    </div>
+    <label>Task ID (update/delete)</label>
+    <input id="taskId" />
+    <label>Task Text</label>
+    <textarea id="taskText" rows="3"></textarea>
+    <div class="flex">
+      <button onclick="updateTask()">Update</button>
+      <button class="secondary" onclick="deleteTask()">Delete</button>
+    </div>
+    <pre id="taskOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Filesystem CRUD</h2>
+    <label>Path (relative to base)</label>
+    <input id="fsPath" placeholder="project/readme.md" />
+    <label>Content</label>
+    <textarea id="fsContent" rows="4"></textarea>
+    <label>Find (replace)</label>
+    <input id="fsFind" placeholder="Text to replace" />
+    <label>Replace With</label>
+    <input id="fsReplace" placeholder="Replacement text" />
+    <label>Replace Count (optional)</label>
+    <input id="fsReplaceCount" placeholder="e.g. 1" />
+    <div class="flex">
+      <button onclick="fsList()">List</button>
+      <button class="secondary" onclick="fsRead()">Read</button>
+    </div>
+    <div class="flex">
+      <button onclick="fsWrite()">Write</button>
+      <button class="secondary" onclick="fsDelete()">Delete</button>
+    </div>
+    <div class="flex">
+      <button onclick="fsReplace()">Replace</button>
+      <button class="secondary" onclick="fsMkdir()">Mkdir</button>
+    </div>
+    <div class="flex">
+      <button onclick="fsRmdir()">Rmdir</button>
+    </div>
+    <pre id="fsOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Autonomous Execute</h2>
+    <label>Operations JSON</label>
+    <textarea id="execPlan" rows="8" placeholder='[{\"type\":\"write\",\"path\":\"project/readme.md\",\"content\":\"Hello\"}]'></textarea>
+    <button onclick="executePlan()">Run Plan</button>
+    <pre id="execOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Bulk Write</h2>
+    <label>Files JSON</label>
+    <textarea id="bulkFiles" rows="6" placeholder='[{\"path\":\"project/a.txt\",\"content\":\"A\"},{\"path\":\"project/b.txt\",\"content\":\"B\"}]'></textarea>
+    <button onclick="fsBulk()">Write Files</button>
+    <pre id="bulkOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Export System</h2>
+    <label>System Name</label>
+    <input id="exportName" placeholder="my-system" />
+    <button onclick="exportSystem()">Generate Zip</button>
+    <small>Zip will download automatically.</small>
+  </section>
+</main>
+
+<script>
+const storageKey = 'agentic-settings';
+
+function getSettings() {
+  const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+  return {
+    apiKey: saved.apiKey || '',
+    baseUrl: saved.baseUrl || ''
+  };
+}
+
+function saveSettings() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const baseUrl = document.getElementById('baseUrl').value.trim();
+  localStorage.setItem(storageKey, JSON.stringify({ apiKey, baseUrl }));
+  setHealth();
+}
+
+function authHeader() {
+  const { apiKey } = getSettings();
+  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+}
+
+function baseUrl() {
+  return getSettings().baseUrl || '';
+}
+
+async function request(path, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...authHeader(),
+    ...(options.headers || {})
+  };
+  const response = await fetch(`${baseUrl()}${path}`, { ...options, headers });
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed (${response.status})`);
+  }
+  return data;
+}
+
+async function setHealth() {
+  try {
+    const data = await request('/health', { headers: {} });
+    document.getElementById('health').textContent = `Health: ${JSON.stringify(data)}`;
+  } catch (err) {
+    document.getElementById('health').textContent = `Health check failed: ${err.message}`;
+  }
+}
+
+async function runAgent() {
+  const prompt = document.getElementById('agentPrompt').value;
+  try {
+    const data = await request('/agent', {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    });
+    document.getElementById('agentOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('agentOutput').textContent = err.message;
+  }
+}
+
+async function listTasks() {
+  try {
+    const data = await request('/tasks', { method: 'GET' });
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
+  }
+}
+
+async function createTask() {
+  const task = document.getElementById('taskText').value;
+  try {
+    const data = await request('/tasks', {
+      method: 'POST',
+      body: JSON.stringify({ task })
+    });
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
+  }
+}
+
+async function updateTask() {
+  const task = document.getElementById('taskText').value;
+  const id = document.getElementById('taskId').value;
+  try {
+    const data = await request('/tasks', {
+      method: 'PUT',
+      body: JSON.stringify({ id, task })
+    });
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
+  }
+}
+
+async function deleteTask() {
+  const id = document.getElementById('taskId').value;
+  try {
+    const data = await request('/tasks', {
+      method: 'DELETE',
+      body: JSON.stringify({ id })
+    });
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
+  }
+}
+
+async function fsList() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/list', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+async function fsRead() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/read', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+    document.getElementById('fsContent').value = data.content || '';
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+async function fsWrite() {
+  const path = document.getElementById('fsPath').value;
+  const content = document.getElementById('fsContent').value;
+  try {
+    const data = await request('/fs/write', {
+      method: 'POST',
+      body: JSON.stringify({ path, content })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+async function fsDelete() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/delete', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+async function fsMkdir() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/mkdir', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+async function fsRmdir() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/rmdir', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+function parseJsonInput(value) {
+  if (!value.trim()) {
+    throw new Error('JSON input required');
+  }
+  return JSON.parse(value);
+}
+
+async function fsReplace() {
+  const path = document.getElementById('fsPath').value;
+  const find = document.getElementById('fsFind').value;
+  const replace = document.getElementById('fsReplace').value;
+  const countRaw = document.getElementById('fsReplaceCount').value;
+  const count = countRaw ? Number(countRaw) : undefined;
+  try {
+    const data = await request('/fs/replace', {
+      method: 'POST',
+      body: JSON.stringify({ path, find, replace, count })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+async function fsBulk() {
+  const raw = document.getElementById('bulkFiles').value;
+  try {
+    const files = parseJsonInput(raw);
+    const data = await request('/fs/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ files })
+    });
+    document.getElementById('bulkOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('bulkOutput').textContent = err.message;
+  }
+}
+
+async function executePlan() {
+  const raw = document.getElementById('execPlan').value;
+  try {
+    const operations = parseJsonInput(raw);
+    const data = await request('/execute', {
+      method: 'POST',
+      body: JSON.stringify({ operations })
+    });
+    document.getElementById('execOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('execOutput').textContent = err.message;
+  }
+}
+
+async function exportSystem() {
+  const name = document.getElementById('exportName').value || 'system';
+  try {
+    const response = await fetch(`${baseUrl()}/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ name })
+    });
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name}.zip`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function init() {
+  const settings = getSettings();
+  document.getElementById('apiKey').value = settings.apiKey;
+  document.getElementById('baseUrl').value = settings.baseUrl;
+  setHealth();
+}
+
+init();
+</script>
+</body>
+</html>
