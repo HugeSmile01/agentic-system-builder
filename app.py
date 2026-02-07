@@ -298,6 +298,72 @@ def quality_review(prompt, constraints, audience):
     }
 
 
+def build_end_to_end_plan(goal, audience, ui_style, constraints, safety, authentication, free_tier):
+    summary = {
+        "goal": goal,
+        "audience": audience or "TBD",
+        "ui_style": ui_style or "iPhone-like",
+        "constraints": constraints or "TBD",
+        "safety": bool(safety),
+        "authentication": bool(authentication),
+        "free_tier": bool(free_tier),
+    }
+    architect_plan = [
+        "Define product scope, success metrics, and key user journeys.",
+        "Map system components: iPhone-like web UI, API layer, data store, auth provider.",
+        "Design data models for projects, plans, tasks, and audit logs.",
+        "Specify integration boundaries, rate limits, and error handling policies.",
+        "Establish security requirements (least-privilege access, secrets management, logging).",
+        "Document deployment targets and free-tier constraints for hosting and databases.",
+    ]
+    engineer_plan = [
+        "Implement authenticated API endpoints with input validation and rate limiting.",
+        "Build responsive, iPhone-inspired UI with focused navigation and clear calls-to-action.",
+        "Add end-to-end plan generator that outputs architect, engineer, and QA checklists.",
+        "Wire storage for briefs, plans, and export artifacts with safe file handling.",
+        "Add safe defaults, guardrails, and error messaging throughout the user flows.",
+        "Package deployment configuration for a free-tier friendly stack.",
+    ]
+    qa_plan = [
+        "Create test cases for authentication flows, authorization, and invalid access.",
+        "Validate end-to-end flows: onboarding → plan generation → export → task ops.",
+        "Run accessibility and responsive checks for iPhone-sized viewports.",
+        "Perform security review: input sanitization, rate limits, error handling.",
+        "Verify free-tier constraints with load and storage limits.",
+    ]
+    end_to_end_flow = [
+        "User signs in and configures workspace settings.",
+        "User defines project goal, audience, and constraints.",
+        "System generates role-based plan (architect, engineer, QA).",
+        "User reviews plan, adjusts requirements, and runs alignment checks.",
+        "User executes tasks, saves artifacts, and exports the system package.",
+    ]
+    deliverables = [
+        "Role-based plan with architecture, engineering, and QA tracks.",
+        "iPhone-like UI theme with safety cues and clear primary actions.",
+        "Authenticated API with rate limits and validated inputs.",
+        "End-to-end checklist for launch readiness and export packaging.",
+    ]
+    open_questions = []
+    if not audience:
+        open_questions.append("Who is the primary user and what is their technical level?")
+    if not constraints:
+        open_questions.append("Which hosting/data constraints must be honored for free tier?")
+    if not authentication:
+        open_questions.append("Which auth provider is preferred (Supabase, Auth0, custom)?")
+    if not safety:
+        open_questions.append("Which safety policies must be enforced (PII, content filters)?")
+    return {
+        "summary": summary,
+        "software_architect_plan": architect_plan,
+        "software_engineer_plan": engineer_plan,
+        "quality_analyst_plan": qa_plan,
+        "end_to_end_flow": end_to_end_flow,
+        "deliverables": deliverables,
+        "open_questions": open_questions,
+    }
+
+
 @app.errorhandler(ApiError)
 def handle_api_error(error):
     return jsonify({"error": error.message}), error.status_code
@@ -498,6 +564,26 @@ def quality_check():
     constraints = data.get("constraints", "")
     audience = data.get("audience", "")
     response = quality_review(prompt, constraints, audience)
+    return jsonify(response)
+
+
+@app.route("/end-to-end-plan", methods=["POST"])
+@limiter.limit("15 per minute")
+def end_to_end_plan():
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+    data = get_json_body()
+    goal = data.get("goal", "").strip()
+    audience = data.get("audience", "").strip()
+    ui_style = data.get("ui_style", "").strip()
+    constraints = data.get("constraints", "").strip()
+    safety = data.get("safety", False)
+    authentication = data.get("authentication", False)
+    free_tier = data.get("free_tier", False)
+    if not goal:
+        raise ApiError("Goal is required")
+    response = build_end_to_end_plan(goal, audience, ui_style, constraints, safety, authentication, free_tier)
     return jsonify(response)
 
 

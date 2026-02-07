@@ -1,29 +1,31 @@
 :root {
-  color-scheme: light dark;
-  --bg: #0b0f1a;
-  --panel: #121826;
-  --panel-alt: #182035;
-  --text: #f3f5f7;
-  --accent: #5b9dff;
-  --accent-2: #59f2c5;
-  --muted: #9aa4bf;
-  --border: #27314b;
-  --danger: #ff6b6b;
-  --warning: #ffd166;
+  color-scheme: light;
+  --bg: #f5f5f7;
+  --panel: #ffffff;
+  --panel-alt: #f2f2f7;
+  --text: #111827;
+  --accent: #007aff;
+  --accent-2: #34c759;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --danger: #ff3b30;
+  --warning: #ffcc00;
+  --shadow: 0 18px 35px rgba(17, 24, 39, 0.08);
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
-  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+  background: radial-gradient(circle at top, #ffffff, var(--bg));
   color: var(--text);
 }
 header {
   padding: 1.5rem 2rem;
-  background: radial-gradient(circle at top left, #1d2742, #0b0f1a);
+  background: rgba(255, 255, 255, 0.85);
   border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
 }
 header .title {
   display: flex;
@@ -41,8 +43,9 @@ nav a {
   text-decoration: none;
   padding: 0.5rem 0.85rem;
   border-radius: 999px;
-  background: var(--panel);
-  border: 1px solid transparent;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
 }
 nav a.active,
 nav a:hover {
@@ -57,9 +60,9 @@ main {
 section {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   padding: 1.5rem;
-  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow);
 }
 .section-title {
   display: flex;
@@ -92,24 +95,26 @@ select {
 button {
   border: none;
   padding: 0.65rem 1rem;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--accent);
-  color: #0b0f1a;
+  color: #ffffff;
   font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 12px 25px rgba(0, 122, 255, 0.2);
 }
 button.secondary {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border);
+  box-shadow: none;
 }
 button.warning {
   background: var(--warning);
-  color: #2f2f2f;
+  color: #1f2937;
 }
 button.danger {
   background: var(--danger);
-  color: #2f0b0b;
+  color: #ffffff;
 }
 .flex {
   display: flex;
@@ -118,7 +123,8 @@ button.danger {
   align-items: center;
 }
 pre {
-  background: #0b0f1a;
+  background: #f9fafb;
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1rem;
   overflow: auto;
@@ -135,8 +141,8 @@ pre {
   border: 1px solid var(--border);
 }
 .badge {
-  background: rgba(89, 242, 197, 0.15);
-  color: var(--accent-2);
+  background: rgba(52, 199, 89, 0.15);
+  color: #15803d;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.75rem;
@@ -148,6 +154,22 @@ pre {
 .footer-note {
   color: var(--muted);
   font-size: 0.85rem;
+}
+.toggle-group {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.toggle-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0;
+  font-size: 0.85rem;
+}
+.toggle-group input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
 }
 @media (max-width: 768px) {
   header {

@@ -31,6 +31,37 @@
 </section>
 
 <section>
+  <div class="section-title">
+    <h2>End-to-End Plan Builder</h2>
+    <span class="badge">Architect + Engineer + QA</span>
+  </div>
+  <div class="grid-2">
+    <div>
+      <label>Product goal</label>
+      <textarea id="planGoal" rows="4" placeholder="Plan software architect & software engineer & quality analysts. Full functionality. End-to-end. Free. iPhone-like UI. Safe. Has authentication."></textarea>
+      <label>Audience</label>
+      <input id="planAudience" placeholder="Founders, builders, non-technical teams" />
+      <label>Constraints</label>
+      <textarea id="planConstraints" rows="3" placeholder="Free-tier hosting, privacy, limited dependencies"></textarea>
+      <label>UI style</label>
+      <input id="planUiStyle" placeholder="iPhone-like UI" value="iPhone-like UI" />
+      <div class="toggle-group">
+        <label><input type="checkbox" id="planSafety" checked /> Safe by default</label>
+        <label><input type="checkbox" id="planAuth" checked /> Authentication required</label>
+        <label><input type="checkbox" id="planFree" checked /> Free-tier friendly</label>
+      </div>
+      <div class="flex">
+        <button onclick="runEndToEndPlan()">Generate Plan</button>
+      </div>
+    </div>
+    <div>
+      <label>Plan output</label>
+      <pre id="planOutput"></pre>
+    </div>
+  </div>
+</section>
+
+<section>
   <h2>Question-First Checklist</h2>
   <div class="grid-2">
     <div class="card-item">

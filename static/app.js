@@ -93,6 +93,34 @@ async function runQualityCheck() {
   }
 }
 
+async function runEndToEndPlan() {
+  const goal = document.getElementById('planGoal').value;
+  const audience = document.getElementById('planAudience').value;
+  const constraints = document.getElementById('planConstraints').value;
+  const uiStyle = document.getElementById('planUiStyle').value;
+  const safety = document.getElementById('planSafety').checked;
+  const authentication = document.getElementById('planAuth').checked;
+  const freeTier = document.getElementById('planFree').checked;
+  const output = document.getElementById('planOutput');
+  try {
+    const data = await request('/end-to-end-plan', {
+      method: 'POST',
+      body: JSON.stringify({
+        goal,
+        audience,
+        constraints,
+        ui_style: uiStyle,
+        safety,
+        authentication,
+        free_tier: freeTier
+      })
+    });
+    output.textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    output.textContent = err.message;
+  }
+}
+
 async function submitProjectBrief() {
   const name = document.getElementById('projectName').value;
   const purpose = document.getElementById('projectPurpose').value;
@@ -267,6 +295,7 @@ window.addEventListener('load', init);
 window.saveSettings = saveSettings;
 window.runAgent = runAgent;
 window.runQualityCheck = runQualityCheck;
+window.runEndToEndPlan = runEndToEndPlan;
 window.submitProjectBrief = submitProjectBrief;
 window.runAlignmentCheck = runAlignmentCheck;
 window.listTasks = listTasks;
