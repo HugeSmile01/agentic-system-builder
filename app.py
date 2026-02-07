@@ -7,7 +7,6 @@ import json
 import logging
 import os
 from pathlib import Path
-import subprocess
 import zipfile
 
 from supabase_client import get_supabase_client
@@ -180,19 +179,6 @@ def db_tasks(action=None, task_id=None, task=None):
     return {"error": "Invalid action"}
 
 
-def run_cli(action, task_id=None, task=None):
-    cmd = ["./cli.sh", action]
-    if task_id:
-        cmd.append(str(task_id))
-    if task:
-        cmd.append(task)
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
-        return result.stdout.strip()
-    except Exception:
-        return "CLI unavailable"
-
-
 @app.errorhandler(ApiError)
 def handle_api_error(error):
     return jsonify({"error": error.message}), error.status_code
@@ -232,10 +218,9 @@ def tasks():
         raise ApiError("Task text is required")
     if action in {"update", "delete"} and not task_id:
         raise ApiError("Task id is required")
-    if SUPABASE_URL and SUPABASE_KEY:
-        result = db_tasks(action, task_id, task)
-    else:
-        result = run_cli(action, task_id, task)
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        raise ApiError("Supabase is required for tasks", status_code=503)
+    result = db_tasks(action, task_id, task)
     return jsonify(result)
 
 
@@ -255,10 +240,9 @@ def agent():
     action = intent.get("action")
     task_id = intent.get("id")
     task = intent.get("task")
-    if SUPABASE_URL and SUPABASE_KEY:
-        result = db_tasks(action, task_id, task)
-    else:
-        result = run_cli(action, task_id, task)
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        raise ApiError("Supabase is required for agent tasks", status_code=503)
+    result = db_tasks(action, task_id, task)
     return jsonify({"intent": intent, "result": result})
 
 
