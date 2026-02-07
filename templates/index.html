@@ -2,463 +2,480 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agentic System Builder</title>
 <style>
-  :root {
-    --bg: #0b1120;
-    --panel: #111827;
-    --panel-2: #0f172a;
-    --border: #1f2937;
-    --text: #e5e7eb;
-    --muted: #94a3b8;
-    --accent: #38bdf8;
-    --accent-2: #22c55e;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-    --code: #020617;
-  }
-
-  * {
-    box-sizing: border-box;
-  }
-
-  body {
-    margin: 0;
-    font-family: "Inter", system-ui, sans-serif;
-    background: radial-gradient(circle at top, #0f172a, #020617 65%);
-    color: var(--text);
-    min-height: 100vh;
-  }
-
+:root {
+  color-scheme: light dark;
+  --bg: #0f1115;
+  --panel: #1b1f2a;
+  --text: #e6e6e6;
+  --accent: #4da3ff;
+  --muted: #8b93a7;
+  --border: #2b3245;
+}
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+header {
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, #1d2230, #0f1115);
+  border-bottom: 1px solid var(--border);
+}
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  padding: 2rem;
+}
+section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.75rem;
+}
+input, textarea, select {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #10131a;
+  color: var(--text);
+}
+button {
+  background: var(--accent);
+  color: #0b0d12;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin-top: 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+pre {
+  background: #0b0d12;
+  border-radius: 10px;
+  padding: 0.75rem;
+  max-height: 240px;
+  overflow: auto;
+}
+.flex {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+.status {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+small {
+  color: var(--muted);
+}
+@media (max-width: 768px) {
   header {
-    padding: 24px 32px 12px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.9);
-    position: sticky;
-    top: 0;
-    z-index: 10;
+    padding: 1rem 1.25rem;
   }
-
-  header h1 {
-    margin: 0 0 6px;
-    font-size: 1.7rem;
-  }
-
-  header p {
-    margin: 0;
-    color: var(--muted);
-  }
-
   main {
-    display: grid;
-    grid-template-columns: minmax(280px, 320px) 1fr;
-    gap: 20px;
-    padding: 24px 32px 40px;
+    padding: 1.25rem;
   }
-
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 18px;
-    box-shadow: 0 16px 24px rgba(0, 0, 0, 0.3);
+  .flex {
+    flex-direction: column;
+    align-items: stretch;
   }
-
-  .panel h2 {
-    margin: 0 0 12px;
-    font-size: 1.05rem;
-  }
-
-  .panel p {
-    margin: 0 0 10px;
-    color: var(--muted);
-    font-size: 0.9rem;
-  }
-
-  label {
-    display: block;
-    margin: 10px 0 6px;
-    font-size: 0.8rem;
-    color: var(--muted);
-  }
-
-  input, textarea, select {
-    width: 100%;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    color: var(--text);
-    padding: 10px 12px;
-    font-size: 0.9rem;
-    outline: none;
-  }
-
-  textarea {
-    min-height: 110px;
-    resize: vertical;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-  }
-
-  .row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-  }
-
   button {
-    background: var(--accent);
-    color: #020617;
-    border: none;
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: 0.2s ease;
+    width: 100%;
   }
-
-  button.secondary {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-  }
-
-  button.success {
-    background: var(--accent-2);
-    color: #052e16;
-  }
-
-  button.danger {
-    background: var(--danger);
-    color: #fee2e2;
-  }
-
-  button:hover {
-    filter: brightness(1.1);
-  }
-
-  .status {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.8);
-    font-size: 0.75rem;
-    color: var(--muted);
-  }
-
-  .log {
-    background: var(--code);
-    border-radius: 12px;
-    padding: 16px;
-    border: 1px solid var(--border);
-    min-height: 200px;
-    white-space: pre-wrap;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.85rem;
-    overflow: auto;
-  }
-
-  .grid-2 {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-  }
-
-  .grid-3 {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .muted {
-    color: var(--muted);
-  }
-
-  @media (max-width: 960px) {
-    main {
-      grid-template-columns: 1fr;
-    }
-  }
+}
 </style>
 </head>
 <body>
 <header>
   <h1>Agentic System Builder</h1>
-  <p>Programmer-focused console for LLM orchestration, task DB, and filesystem automation.</p>
+  <p class="status" id="health">Loading health...</p>
 </header>
-
 <main>
-  <section class="panel">
-    <h2>Session & Health</h2>
-    <p>Configure API access and view current backend status.</p>
-    <label for="apiKey">API Key</label>
+  <section>
+    <h2>Authentication</h2>
+    <label>API Key</label>
     <input id="apiKey" placeholder="Bearer token" />
-    <div class="actions">
-      <button onclick="saveKey()">Save Key</button>
-      <button class="secondary" onclick="fetchHealth()">Check Health</button>
-    </div>
-    <div style="margin-top: 12px;">
-      <span class="status" id="healthStatus">Status: unknown</span>
-    </div>
-
-    <h2 style="margin-top: 24px;">Export Bundle</h2>
-    <label for="exportName">System Name</label>
-    <input id="exportName" placeholder="my-system" />
-    <div class="actions">
-      <button class="success" onclick="exportBundle()">Export ZIP</button>
-    </div>
-
-    <h2 style="margin-top: 24px;">Output Log</h2>
-    <div class="log" id="log">// Ready. Logs will appear here.</div>
+    <label>Base URL</label>
+    <input id="baseUrl" value="" placeholder="Leave blank for same origin" />
+    <button class="secondary" onclick="saveSettings()">Save Settings</button>
   </section>
 
-  <section class="panel">
-    <h2>Agent Command Center</h2>
-    <p>Send a natural language instruction and let the agent orchestrate task CRUD.</p>
-    <label for="prompt">Prompt</label>
-    <textarea id="prompt" placeholder="e.g. Create a task to draft the deployment checklist"></textarea>
-    <div class="actions">
-      <button onclick="runAgent()">Run Agent</button>
-      <button class="secondary" onclick="clearLog()">Clear Log</button>
-    </div>
+  <section>
+    <h2>Agent Command</h2>
+    <label>Prompt</label>
+    <textarea id="agentPrompt" rows="5" placeholder="Create a new task for deploying the app"></textarea>
+    <button onclick="runAgent()">Run Agent</button>
+    <pre id="agentOutput"></pre>
+  </section>
 
-    <div class="grid-2" style="margin-top: 20px;">
-      <div class="panel" style="background: var(--panel-2);">
-        <h2>Task Database</h2>
-        <div class="row">
-          <div>
-            <label for="taskId">Task ID</label>
-            <input id="taskId" placeholder="1" />
-          </div>
-          <div>
-            <label for="taskText">Task Text</label>
-            <input id="taskText" placeholder="Ship MVP" />
-          </div>
-        </div>
-        <div class="actions">
-          <button onclick="listTasks()">List</button>
-          <button class="success" onclick="createTask()">Create</button>
-          <button onclick="updateTask()">Update</button>
-          <button class="danger" onclick="deleteTask()">Delete</button>
-        </div>
-      </div>
-
-      <div class="panel" style="background: var(--panel-2);">
-        <h2>Filesystem Ops</h2>
-        <label for="fsPath">Path (relative to data root)</label>
-        <input id="fsPath" placeholder="project/README.md" />
-        <label for="fsContent">Content</label>
-        <textarea id="fsContent" placeholder="File content"></textarea>
-        <div class="actions">
-          <button onclick="listFiles()">List</button>
-          <button onclick="readFile()">Read</button>
-          <button class="success" onclick="writeFile()">Write</button>
-          <button onclick="makeDir()">Mkdir</button>
-          <button class="danger" onclick="deletePath()">Delete</button>
-        </div>
-        <div class="row" style="margin-top: 12px;">
-          <div>
-            <label for="renameSource">Rename Source</label>
-            <input id="renameSource" placeholder="old/path.txt" />
-          </div>
-          <div>
-            <label for="renameDest">Rename Destination</label>
-            <input id="renameDest" placeholder="new/path.txt" />
-          </div>
-        </div>
-        <div class="actions">
-          <button onclick="renamePath()">Rename</button>
-        </div>
-      </div>
+  <section>
+    <h2>Task Manager</h2>
+    <div class="flex">
+      <button onclick="listTasks()">List</button>
+      <button class="secondary" onclick="createTask()">Create</button>
     </div>
+    <label>Task ID (update/delete)</label>
+    <input id="taskId" />
+    <label>Task Text</label>
+    <textarea id="taskText" rows="3"></textarea>
+    <div class="flex">
+      <button onclick="updateTask()">Update</button>
+      <button class="secondary" onclick="deleteTask()">Delete</button>
+    </div>
+    <pre id="taskOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Filesystem CRUD</h2>
+    <label>Path (relative to base)</label>
+    <input id="fsPath" placeholder="project/readme.md" />
+    <label>Content</label>
+    <textarea id="fsContent" rows="4"></textarea>
+    <label>Find (replace)</label>
+    <input id="fsFind" placeholder="Text to replace" />
+    <label>Replace With</label>
+    <input id="fsReplace" placeholder="Replacement text" />
+    <label>Replace Count (optional)</label>
+    <input id="fsReplaceCount" placeholder="e.g. 1" />
+    <div class="flex">
+      <button onclick="fsList()">List</button>
+      <button class="secondary" onclick="fsRead()">Read</button>
+    </div>
+    <div class="flex">
+      <button onclick="fsWrite()">Write</button>
+      <button class="secondary" onclick="fsDelete()">Delete</button>
+    </div>
+    <div class="flex">
+      <button onclick="fsReplace()">Replace</button>
+      <button class="secondary" onclick="fsMkdir()">Mkdir</button>
+    </div>
+    <div class="flex">
+      <button onclick="fsRmdir()">Rmdir</button>
+    </div>
+    <pre id="fsOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Autonomous Execute</h2>
+    <label>Operations JSON</label>
+    <textarea id="execPlan" rows="8" placeholder='[{\"type\":\"write\",\"path\":\"project/readme.md\",\"content\":\"Hello\"}]'></textarea>
+    <button onclick="executePlan()">Run Plan</button>
+    <pre id="execOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Bulk Write</h2>
+    <label>Files JSON</label>
+    <textarea id="bulkFiles" rows="6" placeholder='[{\"path\":\"project/a.txt\",\"content\":\"A\"},{\"path\":\"project/b.txt\",\"content\":\"B\"}]'></textarea>
+    <button onclick="fsBulk()">Write Files</button>
+    <pre id="bulkOutput"></pre>
+  </section>
+
+  <section>
+    <h2>Export System</h2>
+    <label>System Name</label>
+    <input id="exportName" placeholder="my-system" />
+    <button onclick="exportSystem()">Generate Zip</button>
+    <small>Zip will download automatically.</small>
   </section>
 </main>
 
 <script>
-  const logEl = document.getElementById("log");
+const storageKey = 'agentic-settings';
 
-  function log(message) {
-    const timestamp = new Date().toLocaleTimeString();
-    logEl.textContent = `[${timestamp}] ${message}\n` + logEl.textContent;
+function getSettings() {
+  const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+  return {
+    apiKey: saved.apiKey || '',
+    baseUrl: saved.baseUrl || ''
+  };
+}
+
+function saveSettings() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const baseUrl = document.getElementById('baseUrl').value.trim();
+  localStorage.setItem(storageKey, JSON.stringify({ apiKey, baseUrl }));
+  setHealth();
+}
+
+function authHeader() {
+  const { apiKey } = getSettings();
+  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+}
+
+function baseUrl() {
+  return getSettings().baseUrl || '';
+}
+
+async function request(path, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...authHeader(),
+    ...(options.headers || {})
+  };
+  const response = await fetch(`${baseUrl()}${path}`, { ...options, headers });
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed (${response.status})`);
   }
+  return data;
+}
 
-  function clearLog() {
-    logEl.textContent = "// Ready. Logs will appear here.";
+async function setHealth() {
+  try {
+    const data = await request('/health', { headers: {} });
+    document.getElementById('health').textContent = `Health: ${JSON.stringify(data)}`;
+  } catch (err) {
+    document.getElementById('health').textContent = `Health check failed: ${err.message}`;
   }
+}
 
-  function saveKey() {
-    const key = document.getElementById("apiKey").value.trim();
-    if (!key) {
-      log("API key required.");
-      return;
-    }
-    localStorage.setItem("apiKey", key);
-    log("API key saved.");
-  }
-
-  function loadKey() {
-    const key = localStorage.getItem("apiKey");
-    if (key) {
-      document.getElementById("apiKey").value = key;
-    }
-  }
-
-  function authHeaders() {
-    const key = document.getElementById("apiKey").value.trim();
-    return {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${key}`
-    };
-  }
-
-  async function fetchHealth() {
-    const res = await fetch("/health");
-    const data = await res.json();
-    document.getElementById("healthStatus").textContent = `Status: ${data.status} | backend: ${data.backend}`;
-    log(`Health check: ${JSON.stringify(data)}`);
-  }
-
-  async function runAgent() {
-    const prompt = document.getElementById("prompt").value.trim();
-    if (!prompt) {
-      log("Prompt required.");
-      return;
-    }
-    const res = await fetch("/agent", {
-      method: "POST",
-      headers: authHeaders(),
+async function runAgent() {
+  const prompt = document.getElementById('agentPrompt').value;
+  try {
+    const data = await request('/agent', {
+      method: 'POST',
       body: JSON.stringify({ prompt })
     });
-    log(await res.text());
+    document.getElementById('agentOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('agentOutput').textContent = err.message;
   }
+}
 
-  async function listTasks() {
-    const res = await fetch("/tasks", { method: "GET", headers: authHeaders() });
-    log(await res.text());
+async function listTasks() {
+  try {
+    const data = await request('/tasks', { method: 'GET' });
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
   }
+}
 
-  async function createTask() {
-    const task = document.getElementById("taskText").value.trim();
-    const res = await fetch("/tasks", {
-      method: "POST",
-      headers: authHeaders(),
+async function createTask() {
+  const task = document.getElementById('taskText').value;
+  try {
+    const data = await request('/tasks', {
+      method: 'POST',
       body: JSON.stringify({ task })
     });
-    log(await res.text());
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
   }
+}
 
-  async function updateTask() {
-    const id = document.getElementById("taskId").value.trim();
-    const task = document.getElementById("taskText").value.trim();
-    const res = await fetch("/tasks", {
-      method: "PUT",
-      headers: authHeaders(),
+async function updateTask() {
+  const task = document.getElementById('taskText').value;
+  const id = document.getElementById('taskId').value;
+  try {
+    const data = await request('/tasks', {
+      method: 'PUT',
       body: JSON.stringify({ id, task })
     });
-    log(await res.text());
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
   }
+}
 
-  async function deleteTask() {
-    const id = document.getElementById("taskId").value.trim();
-    const res = await fetch("/tasks", {
-      method: "DELETE",
-      headers: authHeaders(),
+async function deleteTask() {
+  const id = document.getElementById('taskId').value;
+  try {
+    const data = await request('/tasks', {
+      method: 'DELETE',
       body: JSON.stringify({ id })
     });
-    log(await res.text());
+    document.getElementById('taskOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('taskOutput').textContent = err.message;
   }
+}
 
-  async function listFiles() {
-    const path = document.getElementById("fsPath").value.trim();
-    const query = path ? `?path=${encodeURIComponent(path)}` : "";
-    const res = await fetch(`/fs/list${query}`, { headers: authHeaders() });
-    log(await res.text());
+async function fsList() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/list', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
   }
+}
 
-  async function readFile() {
-    const path = document.getElementById("fsPath").value.trim();
-    if (!path) {
-      log("Path required for read.");
-      return;
-    }
-    const res = await fetch(`/fs/read?path=${encodeURIComponent(path)}`, { headers: authHeaders() });
-    log(await res.text());
+async function fsRead() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/read', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+    document.getElementById('fsContent').value = data.content || '';
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
   }
+}
 
-  async function writeFile() {
-    const path = document.getElementById("fsPath").value.trim();
-    const content = document.getElementById("fsContent").value;
-    const res = await fetch("/fs/write", {
-      method: "POST",
-      headers: authHeaders(),
+async function fsWrite() {
+  const path = document.getElementById('fsPath').value;
+  const content = document.getElementById('fsContent').value;
+  try {
+    const data = await request('/fs/write', {
+      method: 'POST',
       body: JSON.stringify({ path, content })
     });
-    log(await res.text());
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
   }
+}
 
-  async function makeDir() {
-    const path = document.getElementById("fsPath").value.trim();
-    const res = await fetch("/fs/mkdir", {
-      method: "POST",
-      headers: authHeaders(),
+async function fsDelete() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/delete', {
+      method: 'POST',
       body: JSON.stringify({ path })
     });
-    log(await res.text());
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
   }
+}
 
-  async function deletePath() {
-    const path = document.getElementById("fsPath").value.trim();
-    const res = await fetch("/fs/delete", {
-      method: "DELETE",
-      headers: authHeaders(),
+async function fsMkdir() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/mkdir', {
+      method: 'POST',
       body: JSON.stringify({ path })
     });
-    log(await res.text());
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
   }
+}
 
-  async function renamePath() {
-    const source = document.getElementById("renameSource").value.trim();
-    const destination = document.getElementById("renameDest").value.trim();
-    const res = await fetch("/fs/rename", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ source, destination })
+async function fsRmdir() {
+  const path = document.getElementById('fsPath').value;
+  try {
+    const data = await request('/fs/rmdir', {
+      method: 'POST',
+      body: JSON.stringify({ path })
     });
-    log(await res.text());
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
   }
+}
 
-  async function exportBundle() {
-    const name = document.getElementById("exportName").value.trim() || "system";
-    const res = await fetch("/export", {
-      method: "POST",
-      headers: authHeaders(),
+function parseJsonInput(value) {
+  if (!value.trim()) {
+    throw new Error('JSON input required');
+  }
+  return JSON.parse(value);
+}
+
+async function fsReplace() {
+  const path = document.getElementById('fsPath').value;
+  const find = document.getElementById('fsFind').value;
+  const replace = document.getElementById('fsReplace').value;
+  const countRaw = document.getElementById('fsReplaceCount').value;
+  const count = countRaw ? Number(countRaw) : undefined;
+  try {
+    const data = await request('/fs/replace', {
+      method: 'POST',
+      body: JSON.stringify({ path, find, replace, count })
+    });
+    document.getElementById('fsOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('fsOutput').textContent = err.message;
+  }
+}
+
+async function fsBulk() {
+  const raw = document.getElementById('bulkFiles').value;
+  try {
+    const files = parseJsonInput(raw);
+    const data = await request('/fs/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ files })
+    });
+    document.getElementById('bulkOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('bulkOutput').textContent = err.message;
+  }
+}
+
+async function executePlan() {
+  const raw = document.getElementById('execPlan').value;
+  try {
+    const operations = parseJsonInput(raw);
+    const data = await request('/execute', {
+      method: 'POST',
+      body: JSON.stringify({ operations })
+    });
+    document.getElementById('execOutput').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    document.getElementById('execOutput').textContent = err.message;
+  }
+}
+
+async function exportSystem() {
+  const name = document.getElementById('exportName').value || 'system';
+  try {
+    const response = await fetch(`${baseUrl()}/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({ name })
     });
-    if (!res.ok) {
-      log(await res.text());
-      return;
+    if (!response.ok) {
+      throw new Error('Export failed');
     }
-    const blob = await res.blob();
+    const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = `${name}.zip`;
     link.click();
     window.URL.revokeObjectURL(url);
-    log(`Exported ${name}.zip`);
+  } catch (err) {
+    alert(err.message);
   }
+}
 
-  loadKey();
+function init() {
+  const settings = getSettings();
+  document.getElementById('apiKey').value = settings.apiKey;
+  document.getElementById('baseUrl').value = settings.baseUrl;
+  setHealth();
+}
+
+init();
 </script>
 </body>
 </html>

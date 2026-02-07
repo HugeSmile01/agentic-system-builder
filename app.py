@@ -128,6 +128,11 @@ def call_llm(prompt, model="gemini-1.5-flash"):
                     "model": "google/gemini-flash-exp:free",
                     "messages": [{"role": "user", "content": prompt}],
                 },
+                timeout=20,
+            )
+            return resp.json()["choices"][0]["message"]["content"]
+    except Exception as exc:
+        logger.exception("LLM call failed")
                 timeout=15,
             )
             return resp.json()["choices"][0]["message"]["content"]
@@ -137,6 +142,34 @@ def call_llm(prompt, model="gemini-1.5-flash"):
 
 
 def db_tasks(action=None, task_id=None, task=None):
+    client = get_supabase_client()
+    if client is None:
+        return {"error": "Supabase not configured"}
+    try:
+        if action == "list":
+            return client.table("tasks").select("*").execute().data
+        if action == "create":
+            return client.table("tasks").insert({"text": task}).execute().data
+        if action == "update":
+            client.table("tasks").update({"text": task}).eq("id", task_id).execute()
+            return f"Updated ID {task_id}"
+        if action == "delete":
+            client.table("tasks").delete().eq("id", task_id).execute()
+            return f"Deleted ID {task_id}"
+    except Exception as exc:
+        logger.exception("Supabase task operation failed")
+        return {"error": str(exc)}
+    return {"error": "Invalid action"}
+
+
+@app.errorhandler(ApiError)
+def handle_api_error(error):
+    return jsonify({"error": error.message}), error.status_code
+
+
+@app.errorhandler(500)
+def handle_internal_error(_):
+    return jsonify({"error": "Internal server error"}), 500
     backend, client = db_backend()
     if backend == "supabase":
         try:
@@ -211,6 +244,7 @@ def health():
             "status": "ok",
             "gemini": bool(GEMINI_KEY),
             "supabase": bool(SUPABASE_URL),
+            "fs_base_dir": str(FS_BASE_DIR),
             "backend": backend,
             "data_root": DATA_ROOT,
         }
@@ -218,6 +252,9 @@ def health():
 
 
 @app.route("/tasks", methods=["GET", "POST", "PUT", "DELETE"])
+@limiter.limit("20 per minute")
+def tasks():
+    require_auth()
 @limiter.limit("30 per minute")
 def tasks():
     auth_error = require_auth()
@@ -228,7 +265,11 @@ def tasks():
     task_id = data.get("id")
     task = data.get("task")
     if action in {"create", "update"} and not task:
-        return json_error("Task text required", status=400)
+        raise ApiError("Task text is required")
+    if action in {"update", "delete"} and not task_id:
+        raise ApiError("Task id is required")
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        raise ApiError("Supabase is required for tasks", status_code=503)
     result = db_tasks(action, task_id, task)
     return jsonify(result)
 
@@ -236,173 +277,174 @@ def tasks():
 @app.route("/agent", methods=["POST"])
 @limiter.limit("10 per minute")
 def agent():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    payload = request.json or {}
-    prompt = payload.get("prompt", "")
+    require_auth()
+    data = get_json_body()
+    prompt = data.get("prompt", "")
     if not prompt:
-        return json_error("Prompt required", status=400)
+        raise ApiError("Prompt is required")
     intent = call_llm(prompt)
-    action = intent.get("action") if isinstance(intent, dict) else None
-    task_id = intent.get("id") if isinstance(intent, dict) else None
-    task = intent.get("task") if isinstance(intent, dict) else None
-    if not action:
-        return json_error("Unable to parse intent", status=400, detail=intent)
+    if not isinstance(intent, dict):
+        raise ApiError("LLM response is not JSON")
+    if "error" in intent:
+        return jsonify({"intent": intent, "result": intent}), 502
+    action = intent.get("action")
+    task_id = intent.get("id")
+    task = intent.get("task")
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        raise ApiError("Supabase is required for agent tasks", status_code=503)
     result = db_tasks(action, task_id, task)
     return jsonify({"intent": intent, "result": result})
 
 
-@app.route("/fs/list")
+@app.route("/fs/list", methods=["POST"])
+@limiter.limit("30 per minute")
 def fs_list():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    rel_path = request.args.get("path", "")
-    try:
-        target = resolve_path(rel_path)
-    except ValueError as exc:
-        return json_error(str(exc), status=400)
-    if not target.exists():
-        return json_error("Path not found", status=404)
-    if not target.is_dir():
-        return json_error("Path is not a directory", status=400)
+    require_auth()
+    data = get_json_body()
+    path = data.get("path", "")
+    target = safe_path(path, allow_base=True)
+    if not target.exists() or not target.is_dir():
+        raise ApiError("Directory not found", status_code=404)
     entries = []
-    for entry in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+    for item in sorted(target.iterdir()):
         entries.append(
             {
-                "name": entry.name,
-                "path": str(entry.relative_to(pathlib.Path(DATA_ROOT).resolve())),
-                "type": "file" if entry.is_file() else "dir",
-                "size": entry.stat().st_size if entry.is_file() else None,
+                "name": item.name,
+                "type": "dir" if item.is_dir() else "file",
+                "size": item.stat().st_size,
             }
         )
-    return jsonify({"path": str(rel_path or "."), "entries": entries})
+    return jsonify({"path": str(target.relative_to(FS_BASE_DIR)), "entries": entries})
 
 
-@app.route("/fs/read")
+@app.route("/fs/read", methods=["POST"])
+@limiter.limit("30 per minute")
 def fs_read():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    rel_path = request.args.get("path")
-    if not rel_path:
-        return json_error("Path required", status=400)
-    try:
-        target = resolve_path(rel_path)
-    except ValueError as exc:
-        return json_error(str(exc), status=400)
-    if not target.exists():
-        return json_error("File not found", status=404)
-    if not target.is_file():
-        return json_error("Path is not a file", status=400)
-    return jsonify({"path": rel_path, "content": target.read_text(encoding="utf-8")})
+    require_auth()
+    data = get_json_body()
+    target = safe_path(data.get("path", ""))
+    if not target.exists() or not target.is_file():
+        raise ApiError("File not found", status_code=404)
+    return jsonify({"path": str(target.relative_to(FS_BASE_DIR)), "content": target.read_text()})
 
 
 @app.route("/fs/write", methods=["POST"])
+@limiter.limit("20 per minute")
 def fs_write():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = request.json or {}
-    rel_path = data.get("path")
-    content = data.get("content", "")
-    if not rel_path:
-        return json_error("Path required", status=400)
-    try:
-        target = resolve_path(rel_path)
-    except ValueError as exc:
-        return json_error(str(exc), status=400)
+    require_auth()
+    data = get_json_body()
+    content = data.get("content")
+    if content is None:
+        raise ApiError("Content is required")
+    target = safe_path(data.get("path", ""))
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    return jsonify({"path": rel_path, "status": "written"})
+    target.write_text(content)
+    return jsonify({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
+
+
+@app.route("/fs/replace", methods=["POST"])
+@limiter.limit("20 per minute")
+def fs_replace():
+    require_auth()
+    data = get_json_body()
+    target = safe_path(data.get("path", ""))
+    find_text = data.get("find")
+    replace_text = data.get("replace", "")
+    count = data.get("count")
+    if not target.exists() or not target.is_file():
+        raise ApiError("File not found", status_code=404)
+    content = target.read_text()
+    updated = apply_replacements(content, find_text, replace_text, count)
+    target.write_text(updated)
+    return jsonify({"status": "updated", "path": str(target.relative_to(FS_BASE_DIR))})
+
+
+@app.route("/fs/delete", methods=["POST"])
+@limiter.limit("20 per minute")
+def fs_delete():
+    require_auth()
+    data = get_json_body()
+    target = safe_path(data.get("path", ""))
+    if not target.exists() or not target.is_file():
+        raise ApiError("File not found", status_code=404)
+    target.unlink()
+    return jsonify({"status": "deleted", "path": str(target.relative_to(FS_BASE_DIR))})
+
+
+@app.route("/fs/bulk", methods=["POST"])
+@limiter.limit("10 per minute")
+def fs_bulk():
+    require_auth()
+    data = get_json_body()
+    files = data.get("files")
+    if not isinstance(files, list):
+        raise ApiError("Files must be a list")
+    results = []
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise ApiError("File entry must be an object")
+        file_path = entry.get("path", "")
+        content = entry.get("content")
+        if content is None:
+            raise ApiError("Content is required for bulk write")
+        target = safe_path(file_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+        results.append({"path": str(target.relative_to(FS_BASE_DIR)), "status": "ok"})
+    return jsonify({"results": results})
 
 
 @app.route("/fs/mkdir", methods=["POST"])
+@limiter.limit("20 per minute")
 def fs_mkdir():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = request.json or {}
-    rel_path = data.get("path")
-    if not rel_path:
-        return json_error("Path required", status=400)
-    try:
-        target = resolve_path(rel_path)
-    except ValueError as exc:
-        return json_error(str(exc), status=400)
+    require_auth()
+    data = get_json_body()
+    target = safe_path(data.get("path", ""))
     target.mkdir(parents=True, exist_ok=True)
-    return jsonify({"path": rel_path, "status": "created"})
+    return jsonify({"status": "created", "path": str(target.relative_to(FS_BASE_DIR))})
 
 
-@app.route("/fs/delete", methods=["DELETE"])
-def fs_delete():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = request.json or {}
-    rel_path = data.get("path")
-    if not rel_path:
-        return json_error("Path required", status=400)
-    try:
-        target = resolve_path(rel_path)
-    except ValueError as exc:
-        return json_error(str(exc), status=400)
-    if not target.exists():
-        return json_error("Path not found", status=404)
-    if target.is_dir():
-        for child in target.rglob("*"):
-            if child.is_file():
-                child.unlink()
-        for child in sorted(target.rglob("*"), reverse=True):
-            if child.is_dir():
-                child.rmdir()
-        target.rmdir()
-    else:
-        target.unlink()
-    return jsonify({"path": rel_path, "status": "deleted"})
+@app.route("/fs/rmdir", methods=["POST"])
+@limiter.limit("20 per minute")
+def fs_rmdir():
+    require_auth()
+    data = get_json_body()
+    target = safe_path(data.get("path", ""))
+    if not target.exists() or not target.is_dir():
+        raise ApiError("Directory not found", status_code=404)
+    if any(target.iterdir()):
+        raise ApiError("Directory not empty", status_code=409)
+    target.rmdir()
+    return jsonify({"status": "removed", "path": str(target.relative_to(FS_BASE_DIR))})
 
 
-@app.route("/fs/rename", methods=["POST"])
-def fs_rename():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = request.json or {}
-    source = data.get("source")
-    destination = data.get("destination")
-    if not source or not destination:
-        return json_error("Source and destination required", status=400)
-    try:
-        source_path = resolve_path(source)
-        destination_path = resolve_path(destination)
-    except ValueError as exc:
-        return json_error(str(exc), status=400)
-    if not source_path.exists():
-        return json_error("Source not found", status=404)
-    destination_path.parent.mkdir(parents=True, exist_ok=True)
-    source_path.rename(destination_path)
-    return jsonify({"source": source, "destination": destination, "status": "renamed"})
+@app.route("/execute", methods=["POST"])
+@limiter.limit("5 per minute")
+def execute_plan():
+    require_auth()
+    data = get_json_body()
+    operations = data.get("operations", [])
+    results = execute_operations(operations)
+    return jsonify({"results": results})
 
 
 @app.route("/export", methods=["POST"])
 def export_system():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    system_name = (request.json or {}).get("name", "system")
-    folder = resolve_path(system_name)
-    zip_path = pathlib.Path(f"{folder}.zip")
+    require_auth()
+    data = get_json_body()
+    system_name = data.get("name", "system")
+    folder = safe_path(system_name)
+    zip_path = folder.with_suffix(".zip")
     folder.mkdir(parents=True, exist_ok=True)
     readme_path = folder / "README.txt"
-    if not readme_path.exists():
-        readme_path.write_text("Generated by Agentic System Builder\n", encoding="utf-8")
+    readme_path.write_text("Generated by Agentic System Builder\n", encoding="utf-8")
     with zipfile.ZipFile(zip_path, "w") as zipf:
         for root, _, files in os.walk(folder):
             for file in files:
+                full_path = Path(root) / file
                 zipf.write(
-                    os.path.join(root, file),
-                    arcname=os.path.relpath(os.path.join(root, file), folder),
+                    full_path,
+                    arcname=full_path.relative_to(folder),
                 )
     return send_file(zip_path)
 
