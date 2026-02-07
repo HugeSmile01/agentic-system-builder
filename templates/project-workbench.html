@@ -13,11 +13,11 @@
       <label>Project name</label>
       <input id="projectName" placeholder="e.g. Launch Hub" />
       <label>System purpose</label>
-      <textarea id="projectPurpose" rows="4" placeholder="Describe the north-star goal."></textarea>
+      <textarea id="projectPurpose" rows="4" placeholder="Describe the north-star goal (maintainable, sustainable, PH-ready)."></textarea>
       <label>Target audience</label>
-      <input id="projectAudience" placeholder="Product leaders, creators, etc." />
+      <input id="projectAudience" placeholder="Philippine founders, local SMBs, future innovators" />
       <label>Constraints</label>
-      <textarea id="projectConstraints" rows="3" placeholder="Hosting, data sources, compliance"></textarea>
+      <textarea id="projectConstraints" rows="3" placeholder="Hosting, data sources, compliance, low-bandwidth reliability"></textarea>
       <div class="flex">
         <button onclick="submitProjectBrief()">Save Brief</button>
       </div>
@@ -25,9 +25,9 @@
     </div>
     <div>
       <label>Alignment check: purpose</label>
-      <textarea id="alignPurpose" rows="3" placeholder="Paste the purpose statement"></textarea>
+      <textarea id="alignPurpose" rows="3" placeholder="Paste the purpose statement (maintenance + sustainability + profit)"></textarea>
       <label>Feature list (one per line)</label>
-      <textarea id="alignFeatures" rows="5" placeholder="Quality review\nPrompt builder\nExport"></textarea>
+      <textarea id="alignFeatures" rows="5" placeholder="Reliability mode for PH users\nBilling &amp; pricing tiers\nObservability dashboard"></textarea>
       <button class="secondary" onclick="runAlignmentCheck()">Run Alignment Check</button>
       <pre id="alignOutput"></pre>
     </div>
@@ -45,11 +45,11 @@
   <label>System name</label>
   <input id="exportName" placeholder="my-agent-system" />
   <label>Purpose</label>
-  <textarea id="exportPurpose" rows="3" placeholder="Summarize the goal"></textarea>
+  <textarea id="exportPurpose" rows="3" placeholder="Summarize the goal (maintainable, sustainable, profitable)"></textarea>
   <label>Key features (one per line)</label>
-  <textarea id="exportFeatures" rows="4" placeholder="Prompt evaluation\nProject briefs\nTask tracking"></textarea>
+  <textarea id="exportFeatures" rows="4" placeholder="PH reliability mode\nRevenue analytics\nMaintenance playbooks"></textarea>
   <label>Constraints</label>
-  <textarea id="exportConstraints" rows="3" placeholder="Hosting, integrations"></textarea>
+  <textarea id="exportConstraints" rows="3" placeholder="Hosting, integrations, sustainable costs"></textarea>
   <button class="warning" onclick="exportSystem()">Generate Export</button>
   <pre id="exportOutput"></pre>
 </section>
