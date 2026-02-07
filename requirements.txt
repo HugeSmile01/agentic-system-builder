@@ -1,4 +1,4 @@
 Flask==3.0.3
 Flask-CORS==5.0.0
-flask-limiter==3.8.1
+flask-limiter>=2.9,<3.0
 google-generativeai==0.8.3
