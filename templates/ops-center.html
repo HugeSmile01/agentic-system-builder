@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% set title = "Ops Center" %}
+{% set page = "ops" %}
+
+{% block content %}
+<section>
+  <h2>Task Manager</h2>
+  <div class="flex">
+    <button onclick="listTasks()">List</button>
+    <button class="secondary" onclick="createTask()">Create</button>
+  </div>
+  <label>Task ID (update/delete)</label>
+  <input id="taskId" />
+  <label>Task Text</label>
+  <textarea id="taskText" rows="3"></textarea>
+  <div class="flex">
+    <button onclick="updateTask()">Update</button>
+    <button class="secondary" onclick="deleteTask()">Delete</button>
+  </div>
+  <pre id="taskOutput"></pre>
+</section>
+
+<section>
+  <h2>Filesystem CRUD</h2>
+  <label>Path (relative to base)</label>
+  <input id="fsPath" placeholder="project/readme.md" />
+  <label>Content</label>
+  <textarea id="fsContent" rows="4"></textarea>
+  <label>Find (replace)</label>
+  <input id="fsFind" placeholder="Text to replace" />
+  <label>Replace With</label>
+  <input id="fsReplace" placeholder="Replacement text" />
+  <label>Replace Count (optional)</label>
+  <input id="fsReplaceCount" placeholder="e.g. 1" />
+  <div class="flex">
+    <button onclick="fsList()">List</button>
+    <button class="secondary" onclick="fsRead()">Read</button>
+    <button onclick="fsWrite()">Write</button>
+    <button class="secondary" onclick="fsDelete()">Delete</button>
+  </div>
+  <div class="flex">
+    <button onclick="fsReplace()">Replace</button>
+    <button class="secondary" onclick="fsMkdir()">Mkdir</button>
+    <button class="secondary" onclick="fsRmdir()">Rmdir</button>
+  </div>
+  <pre id="fsOutput"></pre>
+</section>
+
+<section>
+  <h2>Autonomous Execute</h2>
+  <label>Operations JSON</label>
+  <textarea id="execPlan" rows="8" placeholder='[{"type":"write","path":"project/readme.md","content":"Hello"}]'></textarea>
+  <button onclick="executePlan()">Run Plan</button>
+  <pre id="execOutput"></pre>
+</section>
+
+<section>
+  <h2>Bulk Write</h2>
+  <label>Files JSON</label>
+  <textarea id="bulkFiles" rows="6" placeholder='[{"path":"project/a.txt","content":"A"},{"path":"project/b.txt","content":"B"}]'></textarea>
+  <button onclick="fsBulk()">Write Files</button>
+  <pre id="bulkOutput"></pre>
+</section>
+{% endblock %}
