@@ -211,155 +211,21 @@ async function deleteTask() {
   }
 }
 
-async function fsList() {
-  const path = document.getElementById('fsPath').value;
-  const output = document.getElementById('fsOutput');
-  try {
-    const data = await request('/fs/list', {
-      method: 'POST',
-      body: JSON.stringify({ path })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-async function fsRead() {
-  const path = document.getElementById('fsPath').value;
-  const output = document.getElementById('fsOutput');
-  try {
-    const data = await request('/fs/read', {
-      method: 'POST',
-      body: JSON.stringify({ path })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-    document.getElementById('fsContent').value = data.content || '';
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-async function fsWrite() {
-  const path = document.getElementById('fsPath').value;
-  const content = document.getElementById('fsContent').value;
-  const output = document.getElementById('fsOutput');
-  try {
-    const data = await request('/fs/write', {
-      method: 'POST',
-      body: JSON.stringify({ path, content })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-async function fsDelete() {
-  const path = document.getElementById('fsPath').value;
-  const output = document.getElementById('fsOutput');
-  try {
-    const data = await request('/fs/delete', {
-      method: 'POST',
-      body: JSON.stringify({ path })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-async function fsMkdir() {
-  const path = document.getElementById('fsPath').value;
-  const output = document.getElementById('fsOutput');
-  try {
-    const data = await request('/fs/mkdir', {
-      method: 'POST',
-      body: JSON.stringify({ path })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-async function fsRmdir() {
-  const path = document.getElementById('fsPath').value;
-  const output = document.getElementById('fsOutput');
-  try {
-    const data = await request('/fs/rmdir', {
-      method: 'POST',
-      body: JSON.stringify({ path })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-async function fsReplace() {
-  const path = document.getElementById('fsPath').value;
-  const find = document.getElementById('fsFind').value;
-  const replace = document.getElementById('fsReplace').value;
-  const countRaw = document.getElementById('fsReplaceCount').value;
-  const count = countRaw ? Number(countRaw) : undefined;
-  const output = document.getElementById('fsOutput');
-  try {
-    const data = await request('/fs/replace', {
-      method: 'POST',
-      body: JSON.stringify({ path, find, replace, count })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-function parseJsonInput(value) {
-  if (!value.trim()) {
-    throw new Error('JSON input required');
-  }
-  return JSON.parse(value);
-}
-
-async function fsBulk() {
-  const raw = document.getElementById('bulkFiles').value;
-  const output = document.getElementById('bulkOutput');
-  try {
-    const files = parseJsonInput(raw);
-    const data = await request('/fs/bulk', {
-      method: 'POST',
-      body: JSON.stringify({ files })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
-async function executePlan() {
-  const raw = document.getElementById('execPlan').value;
-  const output = document.getElementById('execOutput');
-  try {
-    const operations = parseJsonInput(raw);
-    const data = await request('/execute', {
-      method: 'POST',
-      body: JSON.stringify({ operations })
-    });
-    output.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    output.textContent = err.message;
-  }
-}
-
 async function exportSystem() {
-  const name = document.getElementById('exportName').value || 'system';
+  const name = document.getElementById('exportName')?.value || 'system';
+  const purpose = document.getElementById('exportPurpose')?.value || '';
+  const constraints = document.getElementById('exportConstraints')?.value || '';
+  const featuresRaw = document.getElementById('exportFeatures')?.value || '';
   const output = document.getElementById('exportOutput');
+  const features = featuresRaw
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
   try {
     const response = await fetch(`${baseUrl()}/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, purpose, features, constraints })
     });
     if (!response.ok) {
       const text = await response.text();
@@ -407,13 +273,4 @@ window.listTasks = listTasks;
 window.createTask = createTask;
 window.updateTask = updateTask;
 window.deleteTask = deleteTask;
-window.fsList = fsList;
-window.fsRead = fsRead;
-window.fsWrite = fsWrite;
-window.fsDelete = fsDelete;
-window.fsMkdir = fsMkdir;
-window.fsRmdir = fsRmdir;
-window.fsReplace = fsReplace;
-window.fsBulk = fsBulk;
-window.executePlan = executePlan;
 window.exportSystem = exportSystem;

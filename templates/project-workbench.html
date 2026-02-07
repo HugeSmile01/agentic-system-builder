@@ -41,9 +41,15 @@
 
 <section>
   <h2>Export Ready</h2>
-  <p class="status">Package the configured system for deployment.</p>
+  <p class="status">Package the configured system for deployment (in-memory zip).</p>
   <label>System name</label>
   <input id="exportName" placeholder="my-agent-system" />
+  <label>Purpose</label>
+  <textarea id="exportPurpose" rows="3" placeholder="Summarize the goal"></textarea>
+  <label>Key features (one per line)</label>
+  <textarea id="exportFeatures" rows="4" placeholder="Prompt evaluation\nProject briefs\nTask tracking"></textarea>
+  <label>Constraints</label>
+  <textarea id="exportConstraints" rows="3" placeholder="Hosting, integrations"></textarea>
   <button class="warning" onclick="exportSystem()">Generate Export</button>
   <pre id="exportOutput"></pre>
 </section>
