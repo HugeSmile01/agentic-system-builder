@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set title = "Ops Center" %}
+{% set page = "ops" %}
+
+{% block content %}
+<section>
+  <h2>Task Manager</h2>
+  <div class="flex">
+    <button onclick="listTasks()">List</button>
+    <button class="secondary" onclick="createTask()">Create</button>
+  </div>
+  <label>Task ID (update/delete)</label>
+  <input id="taskId" />
+  <label>Task Text</label>
+  <textarea id="taskText" rows="3"></textarea>
+  <div class="flex">
+    <button onclick="updateTask()">Update</button>
+    <button class="secondary" onclick="deleteTask()">Delete</button>
+  </div>
+  <pre id="taskOutput"></pre>
+</section>
+
+<section>
+  <h2>Launch Checklist</h2>
+  <div class="card-list">
+    <div class="card-item">
+      <strong>Purpose alignment</strong>
+      <p class="status">Confirm every page supports the system purpose.</p>
+    </div>
+    <div class="card-item">
+      <strong>Quality Analyst review</strong>
+      <p class="status">Run the Prompt Studio review for final prompts.</p>
+    </div>
+    <div class="card-item">
+      <strong>Vercel readiness</strong>
+      <p class="status">Avoid shell commands and keep exports in-memory.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}
