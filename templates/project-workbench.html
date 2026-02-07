@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set title = "Project Workbench" %}
+{% set page = "project" %}
+
+{% block content %}
+<section>
+  <div class="section-title">
+    <h2>Project Workbench</h2>
+    <span class="badge">Purpose aligned</span>
+  </div>
+  <div class="grid-2">
+    <div>
+      <label>Project name</label>
+      <input id="projectName" placeholder="e.g. Launch Hub" />
+      <label>System purpose</label>
+      <textarea id="projectPurpose" rows="4" placeholder="Describe the north-star goal."></textarea>
+      <label>Target audience</label>
+      <input id="projectAudience" placeholder="Product leaders, creators, etc." />
+      <label>Constraints</label>
+      <textarea id="projectConstraints" rows="3" placeholder="Hosting, data sources, compliance"></textarea>
+      <div class="flex">
+        <button onclick="submitProjectBrief()">Save Brief</button>
+      </div>
+      <pre id="projectOutput"></pre>
+    </div>
+    <div>
+      <label>Alignment check: purpose</label>
+      <textarea id="alignPurpose" rows="3" placeholder="Paste the purpose statement"></textarea>
+      <label>Feature list (one per line)</label>
+      <textarea id="alignFeatures" rows="5" placeholder="Quality review\nPrompt builder\nExport"></textarea>
+      <button class="secondary" onclick="runAlignmentCheck()">Run Alignment Check</button>
+      <pre id="alignOutput"></pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Saved Briefs</h2>
+  <div id="projectBriefs" class="card-list"></div>
+</section>
+
+<section>
+  <h2>Export Ready</h2>
+  <p class="status">Package the configured system for deployment.</p>
+  <label>System name</label>
+  <input id="exportName" placeholder="my-agent-system" />
+  <button class="warning" onclick="exportSystem()">Generate Export</button>
+  <pre id="exportOutput"></pre>
+</section>
+{% endblock %}

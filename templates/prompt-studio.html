@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% set title = "Prompt Studio" %}
+{% set page = "prompt" %}
+
+{% block content %}
+<section>
+  <div class="section-title">
+    <h2>Prompt Studio</h2>
+    <span class="badge">Quality Analyst</span>
+  </div>
+  <div class="grid-2">
+    <div>
+      <label>Prompt</label>
+      <textarea id="agentPrompt" rows="6" placeholder="Describe the system you want to build."></textarea>
+      <div class="flex">
+        <button onclick="runAgent()">Run Agent Parser</button>
+        <button class="secondary" onclick="runQualityCheck()">Run Quality Review</button>
+      </div>
+      <pre id="agentOutput"></pre>
+    </div>
+    <div>
+      <label>Audience</label>
+      <input id="qualityAudience" placeholder="e.g. startup founders, product teams" />
+      <label>Constraints</label>
+      <textarea id="qualityConstraints" rows="4" placeholder="Deployment, integrations, compliance"></textarea>
+      <label>Prompt for review</label>
+      <textarea id="qualityPrompt" rows="4" placeholder="Paste the exact prompt you plan to use."></textarea>
+      <pre id="qualityOutput"></pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Question-First Checklist</h2>
+  <div class="grid-2">
+    <div class="card-item">
+      <strong>Purpose alignment</strong>
+      <p class="status">Does every output move the user closer to the system goal?</p>
+    </div>
+    <div class="card-item">
+      <strong>Risk and edge cases</strong>
+      <p class="status">What could break when the prompt meets real user inputs?</p>
+    </div>
+    <div class="card-item">
+      <strong>Delight and differentiation</strong>
+      <p class="status">What is the one "awesome" feature that makes this system memorable?</p>
+    </div>
+    <div class="card-item">
+      <strong>Fix-ready outputs</strong>
+      <p class="status">Are improvements and fixes highlighted in every response?</p>
+    </div>
+  </div>
+</section>
+{% endblock %}
