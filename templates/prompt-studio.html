@@ -11,7 +11,7 @@
   <div class="grid-2">
     <div>
       <label>Prompt</label>
-      <textarea id="agentPrompt" rows="6" placeholder="Describe the system you want to build."></textarea>
+      <textarea id="agentPrompt" rows="6" placeholder="Describe the system you want to build for Philippine innovators."></textarea>
       <div class="flex">
         <button onclick="runAgent()">Run Agent Parser</button>
         <button class="secondary" onclick="runQualityCheck()">Run Quality Review</button>
@@ -20,9 +20,9 @@
     </div>
     <div>
       <label>Audience</label>
-      <input id="qualityAudience" placeholder="e.g. startup founders, product teams" />
+      <input id="qualityAudience" placeholder="e.g. PH startup founders, local product teams" />
       <label>Constraints</label>
-      <textarea id="qualityConstraints" rows="4" placeholder="Deployment, integrations, compliance"></textarea>
+      <textarea id="qualityConstraints" rows="4" placeholder="Deployment, integrations, compliance, sustainable costs"></textarea>
       <label>Prompt for review</label>
       <textarea id="qualityPrompt" rows="4" placeholder="Paste the exact prompt you plan to use."></textarea>
       <pre id="qualityOutput"></pre>
@@ -38,7 +38,7 @@
   <div class="grid-2">
     <div>
       <label>Product goal</label>
-      <textarea id="planGoal" rows="4" placeholder="Plan software architect & software engineer & quality analysts. Full functionality. End-to-end. Free. iPhone-like UI. Safe. Has authentication."></textarea>
+      <textarea id="planGoal" rows="4" placeholder="Plan a maintainable, sustainable, profitable PH-ready system. End-to-end. Safe. Has authentication."></textarea>
       <label>Audience</label>
       <input id="planAudience" placeholder="Founders, builders, non-technical teams" />
       <label>Constraints</label>
@@ -75,6 +75,14 @@
     <div class="card-item">
       <strong>Delight and differentiation</strong>
       <p class="status">What is the one "awesome" feature that makes this system memorable?</p>
+    </div>
+    <div class="card-item">
+      <strong>Maintainability &amp; sustainability</strong>
+      <p class="status">Can the system be operated cheaply and safely for years?</p>
+    </div>
+    <div class="card-item">
+      <strong>Profitability</strong>
+      <p class="status">Which feature directly creates measurable revenue?</p>
     </div>
     <div class="card-item">
       <strong>Fix-ready outputs</strong>
