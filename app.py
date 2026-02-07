@@ -2,132 +2,111 @@ from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from werkzeug.exceptions import HTTPException
 import google.generativeai as genai
+import importlib.util
 import json
-import logging
 import os
-from pathlib import Path
+import pathlib
+import sqlite3
+import subprocess
 import zipfile
 
-from supabase_client import get_supabase_client
-
 app = Flask(__name__, template_folder="templates")
+app.config.update(
+    JSON_SORT_KEYS=False,
+    JSONIFY_PRETTYPRINT_REGULAR=False,
+)
 CORS(app)
 limiter = Limiter(app, key_func=get_remote_address, default_limits=["100 per hour"])
-
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-logger = logging.getLogger(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
 API_KEY = os.getenv("API_KEY", "devkey")
-FS_BASE_DIR = Path(os.getenv("FS_BASE_DIR", "./generated")).resolve()
+DATA_ROOT = os.getenv("DATA_ROOT", "./generated")
+SQLITE_PATH = os.getenv("SQLITE_PATH", "./data/tasks.db")
+USE_CLI = os.getenv("USE_CLI", "").lower() in {"1", "true", "yes"}
 
-FS_BASE_DIR.mkdir(parents=True, exist_ok=True)
-
-genai.configure(api_key=GEMINI_KEY)
+_supabase_client = None
 
 
-class ApiError(Exception):
-    def __init__(self, message, status_code=400):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
+def json_error(message, status=400, detail=None):
+    payload = {"error": message}
+    if detail:
+        payload["detail"] = detail
+    return jsonify(payload), status
+
+
+def get_api_key():
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header.replace("Bearer ", "", 1).strip()
+    return request.headers.get("X-API-Key", "").strip()
 
 
 def require_auth():
-    if request.headers.get("Authorization") != f"Bearer {API_KEY}":
-        raise ApiError("Unauthorized", status_code=401)
+    if get_api_key() != API_KEY:
+        return json_error("Unauthorized", status=401)
+    return None
 
 
-def get_json_body():
-    if not request.is_json:
-        raise ApiError("Expected JSON body")
-    return request.get_json(silent=True) or {}
+def ensure_data_root():
+    pathlib.Path(DATA_ROOT).mkdir(parents=True, exist_ok=True)
 
 
-def safe_path(path: str, allow_base: bool = False) -> Path:
-    if not path:
-        if allow_base:
-            return FS_BASE_DIR
-        raise ApiError("Path is required")
-    resolved = (FS_BASE_DIR / path).resolve()
-    if FS_BASE_DIR not in resolved.parents and resolved != FS_BASE_DIR:
-        raise ApiError("Path escapes base directory", status_code=403)
-    if resolved == FS_BASE_DIR and not allow_base:
-        raise ApiError("Path must target a file or subdirectory")
-    return resolved
+def resolve_path(relative_path):
+    ensure_data_root()
+    root = pathlib.Path(DATA_ROOT).resolve()
+    candidate = (root / relative_path).resolve()
+    if root not in candidate.parents and candidate != root:
+        raise ValueError("Path traversal detected")
+    return candidate
 
 
-def apply_replacements(content: str, find_text: str, replace_text: str, count: int | None):
-    if find_text is None:
-        raise ApiError("Find text is required")
-    if count is not None:
-        return content.replace(find_text, replace_text, int(count))
-    return content.replace(find_text, replace_text)
+def get_supabase_client():
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        return None
+    if importlib.util.find_spec("supabase") is None:
+        return None
+    from supabase import create_client
+
+    _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _supabase_client
 
 
-def execute_operations(operations):
-    results = []
-    if not isinstance(operations, list):
-        raise ApiError("Operations must be a list")
-    for op in operations:
-        if not isinstance(op, dict):
-            raise ApiError("Operation must be an object")
-        op_type = op.get("type")
-        op_path = op.get("path", "")
-        if op_type == "write":
-            content = op.get("content")
-            if content is None:
-                raise ApiError("Content is required for write")
-            target = safe_path(op_path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
-            results.append(
-                {"type": op_type, "path": str(target.relative_to(FS_BASE_DIR)), "status": "ok"}
-            )
-        elif op_type == "delete":
-            target = safe_path(op_path)
-            if not target.exists() or not target.is_file():
-                raise ApiError("File not found", status_code=404)
-            target.unlink()
-            results.append(
-                {"type": op_type, "path": str(target.relative_to(FS_BASE_DIR)), "status": "deleted"}
-            )
-        elif op_type == "mkdir":
-            target = safe_path(op_path)
-            target.mkdir(parents=True, exist_ok=True)
-            results.append(
-                {"type": op_type, "path": str(target.relative_to(FS_BASE_DIR)), "status": "created"}
-            )
-        elif op_type == "rmdir":
-            target = safe_path(op_path)
-            if not target.exists() or not target.is_dir():
-                raise ApiError("Directory not found", status_code=404)
-            if any(target.iterdir()):
-                raise ApiError("Directory not empty", status_code=409)
-            target.rmdir()
-            results.append(
-                {"type": op_type, "path": str(target.relative_to(FS_BASE_DIR)), "status": "removed"}
-            )
-        elif op_type == "replace":
-            find_text = op.get("find")
-            replace_text = op.get("replace", "")
-            count = op.get("count")
-            target = safe_path(op_path)
-            if not target.exists() or not target.is_file():
-                raise ApiError("File not found", status_code=404)
-            content = target.read_text()
-            updated = apply_replacements(content, find_text, replace_text, count)
-            target.write_text(updated)
-            results.append(
-                {"type": op_type, "path": str(target.relative_to(FS_BASE_DIR)), "status": "updated"}
-            )
-        else:
-            raise ApiError(f"Unsupported operation: {op_type}")
-    return results
+def get_sqlite_connection():
+    sqlite_path = pathlib.Path(SQLITE_PATH)
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(sqlite_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def db_backend():
+    client = get_supabase_client()
+    if client:
+        return "supabase", client
+    if USE_CLI:
+        return "cli", None
+    return "sqlite", None
+
+
+genai.configure(api_key=GEMINI_KEY)
 
 
 def call_llm(prompt, model="gemini-1.5-flash"):
@@ -154,6 +133,10 @@ def call_llm(prompt, model="gemini-1.5-flash"):
             return resp.json()["choices"][0]["message"]["content"]
     except Exception as exc:
         logger.exception("LLM call failed")
+                timeout=15,
+            )
+            return resp.json()["choices"][0]["message"]["content"]
+    except Exception as exc:
         return {"error": str(exc)}
     return {"error": "No model configured"}
 
@@ -187,6 +170,65 @@ def handle_api_error(error):
 @app.errorhandler(500)
 def handle_internal_error(_):
     return jsonify({"error": "Internal server error"}), 500
+    backend, client = db_backend()
+    if backend == "supabase":
+        try:
+            if action == "list":
+                return {"backend": backend, "data": client.table("tasks").select("*").execute().data}
+            if action == "create":
+                return {"backend": backend, "data": client.table("tasks").insert({"text": task}).execute().data}
+            if action == "update":
+                client.table("tasks").update({"text": task}).eq("id", task_id).execute()
+                return {"backend": backend, "message": f"Updated ID {task_id}"}
+            if action == "delete":
+                client.table("tasks").delete().eq("id", task_id).execute()
+                return {"backend": backend, "message": f"Deleted ID {task_id}"}
+        except Exception as exc:
+            return {"backend": backend, "error": str(exc)}
+    if backend == "sqlite":
+        conn = get_sqlite_connection()
+        try:
+            if action == "list":
+                rows = conn.execute("SELECT id, text, created_at FROM tasks ORDER BY id DESC").fetchall()
+                return {"backend": backend, "data": [dict(row) for row in rows]}
+            if action == "create":
+                cursor = conn.execute("INSERT INTO tasks (text) VALUES (?)", (task,))
+                conn.commit()
+                return {"backend": backend, "message": f"Created ID {cursor.lastrowid}"}
+            if action == "update":
+                conn.execute("UPDATE tasks SET text = ? WHERE id = ?", (task, task_id))
+                conn.commit()
+                return {"backend": backend, "message": f"Updated ID {task_id}"}
+            if action == "delete":
+                conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+                conn.commit()
+                return {"backend": backend, "message": f"Deleted ID {task_id}"}
+        finally:
+            conn.close()
+    return run_cli(action, task_id, task)
+
+
+def run_cli(action, task_id=None, task=None):
+    cmd = ["./cli.sh", action]
+    if task_id:
+        cmd.append(str(task_id))
+    if task:
+        cmd.append(task)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
+        return {"backend": "cli", "output": result.stdout.strip(), "error": result.stderr.strip()}
+    except Exception:
+        return {"backend": "cli", "error": "CLI unavailable"}
+
+
+@app.errorhandler(HTTPException)
+def handle_http_error(error):
+    return json_error(error.description, status=error.code)
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(error):
+    return json_error("Internal server error", status=500, detail=str(error))
 
 
 @app.route("/")
@@ -196,12 +238,15 @@ def index():
 
 @app.route("/health")
 def health():
+    backend, _ = db_backend()
     return jsonify(
         {
             "status": "ok",
             "gemini": bool(GEMINI_KEY),
             "supabase": bool(SUPABASE_URL),
             "fs_base_dir": str(FS_BASE_DIR),
+            "backend": backend,
+            "data_root": DATA_ROOT,
         }
     )
 
@@ -210,6 +255,11 @@ def health():
 @limiter.limit("20 per minute")
 def tasks():
     require_auth()
+@limiter.limit("30 per minute")
+def tasks():
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
     data = request.json or {}
     action = request.method.lower()
     task_id = data.get("id")
