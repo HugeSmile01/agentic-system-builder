@@ -35,6 +35,11 @@ FS_BASE_DIR = pathlib.Path(DATA_ROOT).resolve()
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
+FS_BASE_DIR = pathlib.Path(DATA_ROOT).resolve()
+
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
+
 _supabase_client = None
 
 
@@ -74,6 +79,16 @@ def get_json_body():
     if data is None:
         raise ApiError("Invalid or missing JSON body")
     return data
+
+
+
+
+def apply_replacements(content, find_text, replace_text, count):
+    if find_text is None:
+        raise ApiError("Find text is required")
+    if count is None:
+        return content.replace(find_text, replace_text)
+    return content.replace(find_text, replace_text, int(count))
 
 
 
@@ -235,6 +250,102 @@ def build_export_payload(name, purpose, features, constraints):
         f"## Constraints\n{constraints or 'None provided.'}\n"
     )
     return payload, readme
+
+
+
+def summarize_alignment(purpose, features):
+    questions = []
+    fixes = []
+    enhancements = []
+    if not purpose:
+        fixes.append("Define a clear system purpose so every feature maps to an outcome.")
+    if purpose and features:
+        mismatches = [item for item in features if purpose.lower() not in item.lower()]
+        if mismatches:
+            questions.append("Which features directly advance the stated purpose?")
+            fixes.append("Remove or reframe features that do not map to the purpose statement.")
+    if not features:
+        questions.append("What core flows are required to fulfill the purpose?")
+    enhancements.append("Add success metrics to validate the purpose after launch.")
+    return {
+        "alignment_summary": "Purpose-focused review generated.",
+        "questions": questions,
+        "fixes": fixes,
+        "enhancements": enhancements,
+    }
+
+
+def quality_review(prompt, constraints, audience):
+    issues = []
+    fixes = []
+    questions = []
+    enhancements = []
+    if not prompt:
+        issues.append("Prompt is empty.")
+        fixes.append("Provide a clear prompt describing the desired system behavior.")
+    if not audience:
+        questions.append("Who is the primary user and what is their skill level?")
+    if constraints and "vercel" not in constraints.lower():
+        enhancements.append("Confirm hosting requirements for Vercel deployment.")
+    if prompt:
+        questions.append("What edge cases could cause the system to fail?")
+        enhancements.append("Add acceptance criteria for each feature.")
+    return {
+        "issues": issues,
+        "fixes": fixes,
+        "questions": questions,
+        "enhancements": enhancements,
+    }
+
+
+@app.errorhandler(ApiError)
+def handle_api_error(error):
+    return jsonify({"error": error.message}), error.status_code
+
+
+
+def execute_operations(operations):
+    if not isinstance(operations, list):
+        raise ApiError("Operations must be a list")
+    results = []
+    for op in operations:
+        if not isinstance(op, dict):
+            results.append({"status": "error", "error": "Operation must be object"})
+            continue
+        op_type = op.get("type")
+        path = op.get("path", "")
+        try:
+            if op_type == "write":
+                target = safe_path(path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(op.get("content", ""))
+                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
+            elif op_type == "read":
+                target = safe_path(path)
+                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR)), "content": target.read_text()})
+            elif op_type == "delete":
+                target = safe_path(path)
+                target.unlink(missing_ok=True)
+                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
+            elif op_type == "mkdir":
+                target = safe_path(path)
+                target.mkdir(parents=True, exist_ok=True)
+                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
+            elif op_type == "rmdir":
+                target = safe_path(path)
+                target.rmdir()
+                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
+            elif op_type == "replace":
+                target = safe_path(path)
+                content = target.read_text()
+                updated = apply_replacements(content, op.get("find"), op.get("replace", ""), op.get("count"))
+                target.write_text(updated)
+                results.append({"status": "updated", "path": str(target.relative_to(FS_BASE_DIR))})
+            else:
+                results.append({"status": "error", "error": f"Unknown op type {op_type}"})
+        except Exception as exc:
+            results.append({"status": "error", "error": str(exc), "path": path})
+    return results
 
 
 
