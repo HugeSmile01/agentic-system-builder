@@ -3,45 +3,56 @@ import json
 import logging
 import os
 import pathlib
+import secrets
 import sqlite3
 import zipfile
+from datetime import datetime, timedelta
+from functools import wraps
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from werkzeug.exceptions import HTTPException
+from werkzeug.security import check_password_hash, generate_password_hash
+import jwt
 
 import google.generativeai as genai
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config.update(JSON_SORT_KEYS=False, JSONIFY_PRETTYPRINT_REGULAR=False)
+# Initialize Flask app
+app = Flask(__name__)
+app.config.update(
+    JSON_SORT_KEYS=False,
+    JSONIFY_PRETTYPRINT_REGULAR=False,
+    SECRET_KEY=os.getenv("SECRET_KEY", secrets.token_hex(32))
+)
 
-CORS(app)
-limiter = Limiter(app, key_func=get_remote_address, default_limits=["100 per hour"])
+CORS(app, resources={r"/*": {"origins": "*"}})
+limiter = Limiter(app, key_func=get_remote_address, default_limits=["200 per hour"])
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# Environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
-OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
-API_KEY = os.getenv("API_KEY", "devkey")
+JWT_SECRET = os.getenv("JWT_SECRET", app.config["SECRET_KEY"])
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24
 DATA_ROOT = os.getenv("DATA_ROOT", "./generated")
-SQLITE_PATH = os.getenv("SQLITE_PATH", "./data/tasks.db")
+SQLITE_PATH = os.getenv("SQLITE_PATH", "./data/agentic.db")
 
 FS_BASE_DIR = pathlib.Path(DATA_ROOT).resolve()
-
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-
-FS_BASE_DIR = pathlib.Path(DATA_ROOT).resolve()
+FS_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
 _supabase_client = None
 
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
 
 class ApiError(Exception):
     def __init__(self, message, status_code=400):
@@ -50,46 +61,11 @@ class ApiError(Exception):
         self.status_code = status_code
 
 
-
 def json_error(message, status=400, detail=None):
-    payload = {"error": message}
+    payload = {"error": message, "timestamp": datetime.utcnow().isoformat()}
     if detail:
         payload["detail"] = detail
     return jsonify(payload), status
-
-
-
-def get_api_key():
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header.replace("Bearer ", "", 1).strip()
-    return request.headers.get("X-API-Key", "").strip()
-
-
-
-def require_auth():
-    if get_api_key() != API_KEY:
-        return json_error("Unauthorized", status=401)
-    return None
-
-
-
-def get_json_body():
-    data = request.get_json(silent=True)
-    if data is None:
-        raise ApiError("Invalid or missing JSON body")
-    return data
-
-
-
-
-def apply_replacements(content, find_text, replace_text, count):
-    if find_text is None:
-        raise ApiError("Find text is required")
-    if count is None:
-        return content.replace(find_text, replace_text)
-    return content.replace(find_text, replace_text, int(count))
-
 
 
 def get_supabase_client():
@@ -100,11 +76,9 @@ def get_supabase_client():
         return None
     try:
         import importlib.util
-
         if importlib.util.find_spec("supabase") is None:
             return None
         from supabase import create_client
-
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
         return _supabase_client
     except Exception as exc:
@@ -112,554 +86,938 @@ def get_supabase_client():
         return None
 
 
-
 def get_sqlite_connection():
     sqlite_path = pathlib.Path(SQLITE_PATH)
     sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(sqlite_path)
     conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS tasks (
+    
+    # Users table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            text TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            full_name TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_login TEXT
         )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS project_briefs (
+    """)
+    
+    # Projects table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
             name TEXT NOT NULL,
-            purpose TEXT NOT NULL,
+            description TEXT,
+            goal TEXT NOT NULL,
             audience TEXT,
+            ui_style TEXT,
             constraints TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            status TEXT DEFAULT 'draft',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
         )
-        """
-    )
+    """)
+    
+    # Generated files table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS generated_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            content TEXT NOT NULL,
+            file_type TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects (id)
+        )
+    """)
+    
+    # Project iterations table (for refinement tracking)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS project_iterations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            iteration_number INTEGER NOT NULL,
+            refined_prompt TEXT NOT NULL,
+            plan TEXT,
+            review_notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects (id)
+        )
+    """)
+    
     conn.commit()
     return conn
 
 
+# ============================================================================
+# JWT AUTHENTICATION
+# ============================================================================
 
-def db_backend():
-    client = get_supabase_client()
-    if client:
-        return "supabase", client
-    return "sqlite", None
+def generate_token(user_id, email):
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
+        "iat": datetime.utcnow()
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def verify_token(token):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise ApiError("Token has expired", 401)
+    except jwt.InvalidTokenError:
+        raise ApiError("Invalid token", 401)
 
-def call_llm(prompt, model="gemini-1.5-flash"):
+
+def require_auth(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise ApiError("Missing or invalid authorization header", 401)
+        
+        token = auth_header.replace("Bearer ", "", 1).strip()
+        try:
+            payload = verify_token(token)
+            request.user_id = payload["user_id"]
+            request.user_email = payload["email"]
+            return f(*args, **kwargs)
+        except ApiError:
+            raise
+    return decorated_function
+
+
+# ============================================================================
+# LLM FUNCTIONS (Multi-Model Support)
+# ============================================================================
+
+def call_llm(prompt, model="gemini-1.5-flash", temperature=0.7, max_tokens=4000):
+    """
+    Call LLM with support for Gemini (free tier with high limits)
+    """
     if not prompt:
-        return {"error": "Prompt is empty"}
+        raise ApiError("Prompt is required for LLM call")
+    
     try:
         if model.startswith("gemini") and GEMINI_KEY:
-            model_obj = genai.GenerativeModel(model)
-            resp = model_obj.generate_content(prompt)
-            return resp.text
-        if OPENROUTER_KEY:
-            import httpx
-
-            resp = httpx.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OPENROUTER_KEY}"},
-                json={
-                    "model": "google/gemini-flash-exp:free",
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-                timeout=20,
+            model_obj = genai.GenerativeModel(
+                model,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens,
+                }
             )
-            return resp.json()["choices"][0]["message"]["content"]
+            response = model_obj.generate_content(prompt)
+            return response.text
+        else:
+            raise ApiError("No LLM model configured. Please set GEMINI_KEY.")
     except Exception as exc:
         logger.exception("LLM call failed")
-        return {"error": str(exc)}
-    return {"error": "No model configured"}
+        raise ApiError(f"LLM error: {str(exc)}", 500)
 
 
+# ============================================================================
+# AGENTIC SYSTEM FUNCTIONS
+# ============================================================================
 
-def parse_agent_intent(prompt):
-    llm_prompt = (
-        "Return JSON only with schema: {action: 'list|create|update|delete', id: number|null, task: string|null}. "
-        f"Prompt: {prompt}"
-    )
-    response = call_llm(llm_prompt)
-    if isinstance(response, dict) and response.get("error"):
-        return response
+def refine_user_prompt(user_input, context=None):
+    """
+    PLANNER AGENT: Refines user input into a detailed, actionable prompt
+    """
+    prompt = f"""You are an expert system architect and prompt engineer. Refine the following user request into a comprehensive, detailed specification for building a software system.
+
+User Request:
+{user_input}
+
+{f"Additional Context: {context}" if context else ""}
+
+Provide a refined specification that includes:
+1. **Project Goal**: Clear, specific objective
+2. **Target Audience**: Who will use this system and their technical level
+3. **Core Features**: Detailed list of must-have features (minimum 5)
+4. **Technical Requirements**: 
+   - Programming language and framework
+   - Database requirements
+   - API integrations needed
+   - Authentication/security needs
+5. **UI/UX Requirements**: Design style, responsiveness, accessibility
+6. **Constraints**: Hosting platform (Vercel), performance, scalability
+7. **Success Criteria**: How to measure if the system works correctly
+
+Be specific, technical, and comprehensive. Output as structured JSON with keys: goal, audience, features (array), technical_requirements (object), ui_requirements (object), constraints (array), success_criteria (array).
+"""
+    
+    response = call_llm(prompt, temperature=0.3)
+    
+    # Try to parse JSON, fallback to structured text
     try:
         return json.loads(response)
     except json.JSONDecodeError:
-        return {"error": "LLM response was not JSON", "raw": response}
+        # Extract information even if not perfect JSON
+        return {
+            "goal": user_input,
+            "raw_refinement": response,
+            "features": [],
+            "technical_requirements": {},
+            "ui_requirements": {},
+            "constraints": ["Deploy to Vercel", "Use free-tier services"],
+            "success_criteria": []
+        }
 
 
+def create_system_plan(refined_spec):
+    """
+    PLANNER AGENT: Creates detailed implementation plan
+    """
+    spec_str = json.dumps(refined_spec, indent=2)
+    
+    prompt = f"""You are a senior software architect. Create a detailed implementation plan for this system:
 
-def db_tasks(action=None, task_id=None, task=None):
-    backend, client = db_backend()
-    if backend == "supabase":
-        try:
-            if action == "list":
-                return {"backend": backend, "data": client.table("tasks").select("*").execute().data}
-            if action == "create":
-                return {"backend": backend, "data": client.table("tasks").insert({"text": task}).execute().data}
-            if action == "update":
-                client.table("tasks").update({"text": task}).eq("id", task_id).execute()
-                return {"backend": backend, "message": f"Updated ID {task_id}"}
-            if action == "delete":
-                client.table("tasks").delete().eq("id", task_id).execute()
-                return {"backend": backend, "message": f"Deleted ID {task_id}"}
-        except Exception as exc:
-            return {"backend": backend, "error": str(exc)}
-    if backend == "sqlite":
-        conn = get_sqlite_connection()
-        try:
-            if action == "list":
-                rows = conn.execute("SELECT id, text, created_at FROM tasks ORDER BY id DESC").fetchall()
-                return {"backend": backend, "data": [dict(row) for row in rows]}
-            if action == "create":
-                cursor = conn.execute("INSERT INTO tasks (text) VALUES (?)", (task,))
-                conn.commit()
-                return {"backend": backend, "message": f"Created ID {cursor.lastrowid}"}
-            if action == "update":
-                conn.execute("UPDATE tasks SET text = ? WHERE id = ?", (task, task_id))
-                conn.commit()
-                return {"backend": backend, "message": f"Updated ID {task_id}"}
-            if action == "delete":
-                conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-                conn.commit()
-                return {"backend": backend, "message": f"Deleted ID {task_id}"}
-        finally:
-            conn.close()
-    return {"backend": backend, "error": "No supported backend available"}
+{spec_str}
+
+Provide a comprehensive plan that includes:
+
+1. **Architecture Overview**: System architecture pattern (e.g., MVC, microservices, serverless)
+2. **File Structure**: Complete directory and file structure
+3. **Implementation Steps**: Ordered list of development steps (minimum 8 steps)
+4. **Technology Stack**: Specific technologies, libraries, and versions
+5. **Data Models**: Database schema and relationships
+6. **API Endpoints**: RESTful endpoints with methods and purposes
+7. **Security Measures**: Authentication, authorization, data protection
+8. **Deployment Strategy**: How to deploy to Vercel
+9. **Testing Strategy**: Unit tests, integration tests, E2E tests
+10. **Risk Assessment**: Potential challenges and mitigation strategies
+
+Output as detailed JSON with these exact keys.
+"""
+    
+    response = call_llm(prompt, temperature=0.2, max_tokens=6000)
+    
+    try:
+        return json.loads(response)
+    except json.JSONDecodeError:
+        return {
+            "architecture": "Modern web application",
+            "file_structure": [],
+            "implementation_steps": [],
+            "technology_stack": {},
+            "raw_plan": response
+        }
 
 
+def generate_project_files(plan, refined_spec):
+    """
+    EXECUTOR AGENT: Generates actual code files based on plan
+    """
+    files = {}
+    
+    # Generate backend file (Python/Flask for Vercel)
+    backend_prompt = f"""Generate a complete, production-ready Flask backend (app.py) for this system:
 
-def build_export_payload(name, purpose, features, constraints):
-    payload = {
-        "name": name,
-        "purpose": purpose,
-        "features": features,
-        "constraints": constraints,
-        "generated_by": "Agentic System Builder",
+Plan: {json.dumps(plan, indent=2)}
+Spec: {json.dumps(refined_spec, indent=2)}
+
+Requirements:
+- Use Flask with proper error handling
+- Include JWT authentication
+- Integrate with Supabase for database
+- Use environment variables for secrets
+- Include comprehensive API endpoints
+- Add input validation
+- Include CORS configuration
+- Add rate limiting
+- Production-ready code with comments
+
+Output ONLY the complete Python code, no explanations.
+"""
+    
+    backend_code = call_llm(backend_prompt, max_tokens=8000)
+    files["app.py"] = clean_code_output(backend_code)
+    
+    # Generate frontend file (React/HTML)
+    frontend_prompt = f"""Generate a complete, production-ready mobile-first web interface for this system:
+
+Plan: {json.dumps(plan, indent=2)}
+Spec: {json.dumps(refined_spec, indent=2)}
+
+Requirements:
+- Single HTML file with embedded CSS and JavaScript
+- Mobile-first responsive design optimized for iPhone
+- Modern, beautiful UI with smooth animations
+- Integration with the Flask backend API
+- JWT authentication flow (login/register)
+- All core features implemented
+- Error handling and loading states
+- Accessibility features
+- Production-ready code
+
+Output ONLY the complete HTML code, no explanations.
+"""
+    
+    frontend_code = call_llm(frontend_prompt, max_tokens=8000)
+    files["index.html"] = clean_code_output(frontend_code)
+    
+    # Generate requirements.txt
+    requirements = """Flask==3.0.3
+Flask-CORS==5.0.0
+flask-limiter>=2.9,<3.0
+PyJWT==2.8.0
+google-generativeai==0.8.3
+supabase==2.7.5
+python-dotenv==1.0.0
+"""
+    files["requirements.txt"] = requirements
+    
+    # Generate vercel.json
+    vercel_config = {
+        "version": 2,
+        "builds": [{"src": "app.py", "use": "@vercel/python"}],
+        "routes": [{"src": "/(.*)", "dest": "app.py"}],
+        "env": {
+            "GEMINI_KEY": "@gemini_key",
+            "SUPABASE_URL": "@supabase_url",
+            "SUPABASE_KEY": "@supabase_key",
+            "JWT_SECRET": "@jwt_secret"
+        }
     }
-    readme = (
-        f"# {name}\n\n"
-        f"## Purpose\n{purpose}\n\n"
-        f"## Features\n- " + "\n- ".join(features or ["Define core features."]) + "\n\n"
-        f"## Constraints\n{constraints or 'None provided.'}\n"
-    )
-    return payload, readme
+    files["vercel.json"] = json.dumps(vercel_config, indent=2)
+    
+    # Generate README.md
+    readme = f"""# {refined_spec.get('goal', 'Generated System')}
+
+## Overview
+{refined_spec.get('goal', 'AI-generated system')}
+
+## Features
+{chr(10).join(f"- {feature}" for feature in refined_spec.get('features', []))}
+
+## Technology Stack
+- **Backend**: Flask (Python)
+- **Frontend**: HTML/CSS/JavaScript
+- **Database**: Supabase
+- **AI**: Google Gemini
+- **Authentication**: JWT
+- **Deployment**: Vercel
+
+## Setup Instructions
+
+### 1. Environment Variables
+Create a `.env` file:
+```
+GEMINI_KEY=your_gemini_api_key
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+JWT_SECRET=your_secret_key
+```
+
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Run Locally
+```bash
+python app.py
+```
+
+### 4. Deploy to Vercel
+```bash
+vercel --prod
+```
+
+## API Endpoints
+See the API documentation in the code comments.
+
+## Generated by
+Agentic System Builder - AI-powered autonomous system generation
+"""
+    files["README.md"] = readme
+    
+    # Generate .env.example
+    env_example = """GEMINI_KEY=your_gemini_api_key_here
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_anon_key
+JWT_SECRET=your_random_secret_key_min_32_chars
+"""
+    files[".env.example"] = env_example
+    
+    return files
 
 
+def review_generated_code(files, plan, refined_spec):
+    """
+    REVIEWER AGENT: Reviews generated code for quality, security, and completeness
+    """
+    files_summary = "\n".join([f"- {name} ({len(content)} chars)" for name, content in files.items()])
+    
+    prompt = f"""You are a senior code reviewer. Review this generated system for quality, security, and completeness.
 
-def summarize_alignment(purpose, features):
-    questions = []
-    fixes = []
-    enhancements = []
-    if not purpose:
-        fixes.append("Define a clear system purpose so every feature maps to an outcome.")
-    if purpose and features:
-        mismatches = [item for item in features if purpose.lower() not in item.lower()]
-        if mismatches:
-            questions.append("Which features directly advance the stated purpose?")
-            fixes.append("Remove or reframe features that do not map to the purpose statement.")
-    if not features:
-        questions.append("What core flows are required to fulfill the purpose?")
-    enhancements.append("Add success metrics to validate the purpose after launch.")
-    return {
-        "alignment_summary": "Purpose-focused review generated.",
-        "questions": questions,
-        "fixes": fixes,
-        "enhancements": enhancements,
-    }
+Generated Files:
+{files_summary}
 
+Original Plan:
+{json.dumps(plan, indent=2)[:1000]}...
 
-def quality_review(prompt, constraints, audience):
-    issues = []
-    fixes = []
-    questions = []
-    enhancements = []
-    if not prompt:
-        issues.append("Prompt is empty.")
-        fixes.append("Provide a clear prompt describing the desired system behavior.")
-    if not audience:
-        questions.append("Who is the primary user and what is their skill level?")
-    if constraints and "vercel" not in constraints.lower():
-        enhancements.append("Confirm hosting requirements for Vercel deployment.")
-    if prompt:
-        questions.append("What edge cases could cause the system to fail?")
-        enhancements.append("Add acceptance criteria for each feature.")
-    return {
-        "issues": issues,
-        "fixes": fixes,
-        "questions": questions,
-        "enhancements": enhancements,
-    }
+Review Criteria:
+1. **Security**: Authentication, input validation, SQL injection prevention, XSS protection
+2. **Code Quality**: Readability, modularity, error handling, comments
+3. **Completeness**: All features implemented, all files present
+4. **Best Practices**: Industry standards, design patterns, performance
+5. **Deployment Readiness**: Vercel compatibility, environment variables, dependencies
 
-
-def build_end_to_end_plan(goal, audience, ui_style, constraints, safety, authentication, free_tier):
-    summary = {
-        "goal": goal,
-        "audience": audience or "TBD",
-        "ui_style": ui_style or "iPhone-like",
-        "constraints": constraints or "TBD",
-        "safety": bool(safety),
-        "authentication": bool(authentication),
-        "free_tier": bool(free_tier),
-    }
-    architect_plan = [
-        "Define product scope, success metrics, and key user journeys.",
-        "Map system components: iPhone-like web UI, API layer, data store, auth provider.",
-        "Design data models for projects, plans, tasks, and audit logs.",
-        "Specify integration boundaries, rate limits, and error handling policies.",
-        "Establish security requirements (least-privilege access, secrets management, logging).",
-        "Document deployment targets and free-tier constraints for hosting and databases.",
-    ]
-    engineer_plan = [
-        "Implement authenticated API endpoints with input validation and rate limiting.",
-        "Build responsive, iPhone-inspired UI with focused navigation and clear calls-to-action.",
-        "Add end-to-end plan generator that outputs architect, engineer, and QA checklists.",
-        "Wire storage for briefs, plans, and export artifacts with safe file handling.",
-        "Add safe defaults, guardrails, and error messaging throughout the user flows.",
-        "Package deployment configuration for a free-tier friendly stack.",
-    ]
-    qa_plan = [
-        "Create test cases for authentication flows, authorization, and invalid access.",
-        "Validate end-to-end flows: onboarding → plan generation → export → task ops.",
-        "Run accessibility and responsive checks for iPhone-sized viewports.",
-        "Perform security review: input sanitization, rate limits, error handling.",
-        "Verify free-tier constraints with load and storage limits.",
-    ]
-    end_to_end_flow = [
-        "User signs in and configures workspace settings.",
-        "User defines project goal, audience, and constraints.",
-        "System generates role-based plan (architect, engineer, QA).",
-        "User reviews plan, adjusts requirements, and runs alignment checks.",
-        "User executes tasks, saves artifacts, and exports the system package.",
-    ]
-    deliverables = [
-        "Role-based plan with architecture, engineering, and QA tracks.",
-        "iPhone-like UI theme with safety cues and clear primary actions.",
-        "Authenticated API with rate limits and validated inputs.",
-        "End-to-end checklist for launch readiness and export packaging.",
-    ]
-    open_questions = []
-    if not audience:
-        open_questions.append("Who is the primary user and what is their technical level?")
-    if not constraints:
-        open_questions.append("Which hosting/data constraints must be honored for free tier?")
-    if not authentication:
-        open_questions.append("Which auth provider is preferred (Supabase, Auth0, custom)?")
-    if not safety:
-        open_questions.append("Which safety policies must be enforced (PII, content filters)?")
-    return {
-        "summary": summary,
-        "software_architect_plan": architect_plan,
-        "software_engineer_plan": engineer_plan,
-        "quality_analyst_plan": qa_plan,
-        "end_to_end_flow": end_to_end_flow,
-        "deliverables": deliverables,
-        "open_questions": open_questions,
-    }
+Provide review as JSON:
+{{
+    "overall_score": 0-100,
+    "security_issues": ["issue1", "issue2"],
+    "quality_issues": ["issue1"],
+    "missing_features": ["feature1"],
+    "recommendations": ["rec1", "rec2"],
+    "deployment_ready": true/false,
+    "summary": "Brief summary"
+}}
+"""
+    
+    response = call_llm(prompt, temperature=0.3)
+    
+    try:
+        return json.loads(response)
+    except json.JSONDecodeError:
+        return {
+            "overall_score": 75,
+            "security_issues": [],
+            "quality_issues": [],
+            "missing_features": [],
+            "recommendations": ["Review code manually"],
+            "deployment_ready": True,
+            "summary": response[:500],
+            "raw_review": response
+        }
 
 
-@app.errorhandler(ApiError)
-def handle_api_error(error):
-    return jsonify({"error": error.message}), error.status_code
-
-
-
-def execute_operations(operations):
-    if not isinstance(operations, list):
-        raise ApiError("Operations must be a list")
-    results = []
-    for op in operations:
-        if not isinstance(op, dict):
-            results.append({"status": "error", "error": "Operation must be object"})
+def refactor_code(files, review_feedback):
+    """
+    REFACTORER AGENT: Applies improvements based on review feedback
+    """
+    if review_feedback.get("overall_score", 100) >= 90:
+        return files, "Code quality excellent, no refactoring needed"
+    
+    refactored_files = {}
+    issues = review_feedback.get("security_issues", []) + review_feedback.get("quality_issues", [])
+    
+    if not issues:
+        return files, "No critical issues to refactor"
+    
+    # Refactor critical files (app.py, index.html)
+    for filename in ["app.py", "index.html"]:
+        if filename not in files:
             continue
-        op_type = op.get("type")
-        path = op.get("path", "")
+            
+        prompt = f"""Refactor this code to fix the following issues:
+
+Issues to fix:
+{chr(10).join(f"- {issue}" for issue in issues[:5])}
+
+Original code:
+```
+{files[filename][:4000]}
+```
+
+Provide the complete refactored code with fixes applied. Output ONLY code, no explanations.
+"""
+        
         try:
-            if op_type == "write":
-                target = safe_path(path)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(op.get("content", ""))
-                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
-            elif op_type == "read":
-                target = safe_path(path)
-                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR)), "content": target.read_text()})
-            elif op_type == "delete":
-                target = safe_path(path)
-                target.unlink(missing_ok=True)
-                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
-            elif op_type == "mkdir":
-                target = safe_path(path)
-                target.mkdir(parents=True, exist_ok=True)
-                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
-            elif op_type == "rmdir":
-                target = safe_path(path)
-                target.rmdir()
-                results.append({"status": "ok", "path": str(target.relative_to(FS_BASE_DIR))})
-            elif op_type == "replace":
-                target = safe_path(path)
-                content = target.read_text()
-                updated = apply_replacements(content, op.get("find"), op.get("replace", ""), op.get("count"))
-                target.write_text(updated)
-                results.append({"status": "updated", "path": str(target.relative_to(FS_BASE_DIR))})
-            else:
-                results.append({"status": "error", "error": f"Unknown op type {op_type}"})
-        except Exception as exc:
-            results.append({"status": "error", "error": str(exc), "path": path})
-    return results
+            refactored_code = call_llm(prompt, max_tokens=8000)
+            refactored_files[filename] = clean_code_output(refactored_code)
+        except Exception as e:
+            logger.error(f"Refactoring failed for {filename}: {e}")
+            refactored_files[filename] = files[filename]
+    
+    # Keep other files unchanged
+    for filename, content in files.items():
+        if filename not in refactored_files:
+            refactored_files[filename] = content
+    
+    return refactored_files, f"Refactored {len(refactored_files)} files"
 
 
-
-def summarize_alignment(purpose, features):
-    questions = []
-    fixes = []
-    enhancements = []
-    if not purpose:
-        fixes.append("Define a clear system purpose so every feature maps to an outcome.")
-    if purpose and features:
-        mismatches = [item for item in features if purpose.lower() not in item.lower()]
-        if mismatches:
-            questions.append("Which features directly advance the stated purpose?")
-            fixes.append("Remove or reframe features that do not map to the purpose statement.")
-    if not features:
-        questions.append("What core flows are required to fulfill the purpose?")
-    enhancements.append("Add success metrics to validate the purpose after launch.")
-    return {
-        "alignment_summary": "Purpose-focused review generated.",
-        "questions": questions,
-        "fixes": fixes,
-        "enhancements": enhancements,
-    }
+def clean_code_output(code_text):
+    """Remove markdown code fences and clean up LLM output"""
+    code_text = code_text.strip()
+    
+    # Remove markdown code fences
+    if code_text.startswith("```"):
+        lines = code_text.split("\n")
+        # Remove first line (```python or ```html etc)
+        lines = lines[1:]
+        # Remove last line if it's ```
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        code_text = "\n".join(lines)
+    
+    return code_text.strip()
 
 
-def quality_review(prompt, constraints, audience):
-    issues = []
-    fixes = []
-    questions = []
-    enhancements = []
-    if not prompt:
-        issues.append("Prompt is empty.")
-        fixes.append("Provide a clear prompt describing the desired system behavior.")
-    if not audience:
-        questions.append("Who is the primary user and what is their skill level?")
-    if constraints and "vercel" not in constraints.lower():
-        enhancements.append("Confirm hosting requirements for Vercel deployment.")
-    if prompt:
-        questions.append("What edge cases could cause the system to fail?")
-        enhancements.append("Add acceptance criteria for each feature.")
-    return {
-        "issues": issues,
-        "fixes": fixes,
-        "questions": questions,
-        "enhancements": enhancements,
-    }
-
+# ============================================================================
+# ERROR HANDLERS
+# ============================================================================
 
 @app.errorhandler(ApiError)
 def handle_api_error(error):
-    return jsonify({"error": error.message}), error.status_code
-
-
-@app.errorhandler(HTTPException)
-def handle_http_error(error):
-    return json_error(error.description, status=error.code)
+    return jsonify({
+        "error": error.message,
+        "timestamp": datetime.utcnow().isoformat()
+    }), error.status_code
 
 
 @app.errorhandler(Exception)
 def handle_unexpected_error(error):
+    logger.exception("Unexpected error")
     return json_error("Internal server error", status=500, detail=str(error))
+
+
+# ============================================================================
+# AUTHENTICATION ENDPOINTS
+# ============================================================================
+
+@app.route("/api/auth/register", methods=["POST"])
+@limiter.limit("5 per hour")
+def register():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "").strip()
+    full_name = data.get("full_name", "").strip()
+    
+    if not email or not password:
+        raise ApiError("Email and password are required")
+    
+    if len(password) < 8:
+        raise ApiError("Password must be at least 8 characters")
+    
+    conn = get_sqlite_connection()
+    try:
+        # Check if user exists
+        existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            raise ApiError("User already exists", 409)
+        
+        # Create user
+        password_hash = generate_password_hash(password)
+        cursor = conn.execute(
+            "INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)",
+            (email, password_hash, full_name)
+        )
+        conn.commit()
+        
+        user_id = cursor.lastrowid
+        token = generate_token(user_id, email)
+        
+        return jsonify({
+            "token": token,
+            "user": {
+                "id": user_id,
+                "email": email,
+                "full_name": full_name
+            }
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/auth/login", methods=["POST"])
+@limiter.limit("10 per hour")
+def login():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "").strip()
+    
+    if not email or not password:
+        raise ApiError("Email and password are required")
+    
+    conn = get_sqlite_connection()
+    try:
+        user = conn.execute(
+            "SELECT id, email, password_hash, full_name FROM users WHERE email = ?",
+            (email,)
+        ).fetchone()
+        
+        if not user or not check_password_hash(user["password_hash"], password):
+            raise ApiError("Invalid credentials", 401)
+        
+        # Update last login
+        conn.execute(
+            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+            (user["id"],)
+        )
+        conn.commit()
+        
+        token = generate_token(user["id"], user["email"])
+        
+        return jsonify({
+            "token": token,
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "full_name": user["full_name"]
+            }
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/auth/me", methods=["GET"])
+@require_auth
+def get_current_user():
+    conn = get_sqlite_connection()
+    try:
+        user = conn.execute(
+            "SELECT id, email, full_name, created_at FROM users WHERE id = ?",
+            (request.user_id,)
+        ).fetchone()
+        
+        if not user:
+            raise ApiError("User not found", 404)
+        
+        return jsonify(dict(user))
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# PROJECT ENDPOINTS
+# ============================================================================
+
+@app.route("/api/projects", methods=["GET"])
+@require_auth
+def list_projects():
+    conn = get_sqlite_connection()
+    try:
+        projects = conn.execute(
+            "SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC",
+            (request.user_id,)
+        ).fetchall()
+        
+        return jsonify({"projects": [dict(p) for p in projects]})
+    finally:
+        conn.close()
+
+
+@app.route("/api/projects", methods=["POST"])
+@limiter.limit("10 per hour")
+@require_auth
+def create_project():
+    data = request.get_json() or {}
+    name = data.get("name", "").strip()
+    description = data.get("description", "").strip()
+    goal = data.get("goal", "").strip()
+    
+    if not name or not goal:
+        raise ApiError("Project name and goal are required")
+    
+    conn = get_sqlite_connection()
+    try:
+        cursor = conn.execute(
+            """INSERT INTO projects (user_id, name, description, goal, audience, ui_style, constraints, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')""",
+            (request.user_id, name, description, goal,
+             data.get("audience", ""), data.get("ui_style", ""), data.get("constraints", ""))
+        )
+        conn.commit()
+        
+        return jsonify({
+            "id": cursor.lastrowid,
+            "name": name,
+            "status": "draft"
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/projects/<int:project_id>", methods=["GET"])
+@require_auth
+def get_project(project_id):
+    conn = get_sqlite_connection()
+    try:
+        project = conn.execute(
+            "SELECT * FROM projects WHERE id = ? AND user_id = ?",
+            (project_id, request.user_id)
+        ).fetchone()
+        
+        if not project:
+            raise ApiError("Project not found", 404)
+        
+        # Get iterations
+        iterations = conn.execute(
+            "SELECT * FROM project_iterations WHERE project_id = ? ORDER BY iteration_number DESC",
+            (project_id,)
+        ).fetchall()
+        
+        # Get files
+        files = conn.execute(
+            "SELECT * FROM generated_files WHERE project_id = ?",
+            (project_id,)
+        ).fetchall()
+        
+        return jsonify({
+            "project": dict(project),
+            "iterations": [dict(i) for i in iterations],
+            "files": [dict(f) for f in files]
+        })
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# AGENTIC SYSTEM ENDPOINTS
+# ============================================================================
+
+@app.route("/api/refine-prompt", methods=["POST"])
+@limiter.limit("20 per hour")
+@require_auth
+def refine_prompt_endpoint():
+    """Step 1: Refine user input into detailed specification"""
+    data = request.get_json() or {}
+    user_input = data.get("prompt", "").strip()
+    project_id = data.get("project_id")
+    
+    if not user_input:
+        raise ApiError("Prompt is required")
+    
+    try:
+        refined = refine_user_prompt(user_input, data.get("context"))
+        
+        # Save iteration if project_id provided
+        if project_id:
+            conn = get_sqlite_connection()
+            try:
+                # Verify project ownership
+                project = conn.execute(
+                    "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+                    (project_id, request.user_id)
+                ).fetchone()
+                
+                if project:
+                    # Get iteration number
+                    last_iteration = conn.execute(
+                        "SELECT MAX(iteration_number) as max_iter FROM project_iterations WHERE project_id = ?",
+                        (project_id,)
+                    ).fetchone()
+                    
+                    next_iteration = (last_iteration["max_iter"] or 0) + 1
+                    
+                    conn.execute(
+                        """INSERT INTO project_iterations (project_id, iteration_number, refined_prompt)
+                           VALUES (?, ?, ?)""",
+                        (project_id, next_iteration, json.dumps(refined))
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
+        
+        return jsonify({
+            "refined": refined,
+            "original": user_input
+        })
+    except Exception as e:
+        logger.exception("Prompt refinement failed")
+        raise ApiError(f"Refinement failed: {str(e)}", 500)
+
+
+@app.route("/api/generate-plan", methods=["POST"])
+@limiter.limit("15 per hour")
+@require_auth
+def generate_plan_endpoint():
+    """Step 2: Generate implementation plan"""
+    data = request.get_json() or {}
+    refined_spec = data.get("refined_spec")
+    project_id = data.get("project_id")
+    
+    if not refined_spec:
+        raise ApiError("Refined specification is required")
+    
+    try:
+        plan = create_system_plan(refined_spec)
+        
+        # Update iteration with plan
+        if project_id:
+            conn = get_sqlite_connection()
+            try:
+                conn.execute(
+                    """UPDATE project_iterations 
+                       SET plan = ?
+                       WHERE project_id = ? 
+                       AND iteration_number = (SELECT MAX(iteration_number) FROM project_iterations WHERE project_id = ?)""",
+                    (json.dumps(plan), project_id, project_id)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        
+        return jsonify({"plan": plan})
+    except Exception as e:
+        logger.exception("Plan generation failed")
+        raise ApiError(f"Plan generation failed: {str(e)}", 500)
+
+
+@app.route("/api/generate-system", methods=["POST"])
+@limiter.limit("5 per hour")
+@require_auth
+def generate_system_endpoint():
+    """Step 3: Generate complete system with code"""
+    data = request.get_json() or {}
+    plan = data.get("plan")
+    refined_spec = data.get("refined_spec")
+    project_id = data.get("project_id")
+    
+    if not plan or not refined_spec:
+        raise ApiError("Plan and refined specification are required")
+    
+    try:
+        # Generate files
+        logger.info("Generating project files...")
+        files = generate_project_files(plan, refined_spec)
+        
+        # Review code
+        logger.info("Reviewing generated code...")
+        review = review_generated_code(files, plan, refined_spec)
+        
+        # Refactor if needed
+        logger.info("Applying refactoring...")
+        final_files, refactor_msg = refactor_code(files, review)
+        
+        # Save to database
+        if project_id:
+            conn = get_sqlite_connection()
+            try:
+                # Delete old files
+                conn.execute("DELETE FROM generated_files WHERE project_id = ?", (project_id,))
+                
+                # Save new files
+                for filename, content in final_files.items():
+                    file_type = filename.split(".")[-1] if "." in filename else "txt"
+                    conn.execute(
+                        """INSERT INTO generated_files (project_id, filename, content, file_type)
+                           VALUES (?, ?, ?, ?)""",
+                        (project_id, filename, content, file_type)
+                    )
+                
+                # Update iteration with review
+                conn.execute(
+                    """UPDATE project_iterations 
+                       SET review_notes = ?
+                       WHERE project_id = ? 
+                       AND iteration_number = (SELECT MAX(iteration_number) FROM project_iterations WHERE project_id = ?)""",
+                    (json.dumps(review), project_id, project_id)
+                )
+                
+                # Update project status
+                conn.execute(
+                    "UPDATE projects SET status = 'generated', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (project_id,)
+                )
+                
+                conn.commit()
+            finally:
+                conn.close()
+        
+        return jsonify({
+            "files": {name: len(content) for name, content in final_files.items()},
+            "review": review,
+            "refactor_message": refactor_msg,
+            "total_files": len(final_files)
+        })
+    except Exception as e:
+        logger.exception("System generation failed")
+        raise ApiError(f"Generation failed: {str(e)}", 500)
+
+
+@app.route("/api/projects/<int:project_id>/export", methods=["GET"])
+@limiter.limit("10 per hour")
+@require_auth
+def export_project(project_id):
+    """Export project as ZIP file"""
+    conn = get_sqlite_connection()
+    try:
+        # Verify ownership
+        project = conn.execute(
+            "SELECT name FROM projects WHERE id = ? AND user_id = ?",
+            (project_id, request.user_id)
+        ).fetchone()
+        
+        if not project:
+            raise ApiError("Project not found", 404)
+        
+        # Get all files
+        files = conn.execute(
+            "SELECT filename, content FROM generated_files WHERE project_id = ?",
+            (project_id,)
+        ).fetchall()
+        
+        if not files:
+            raise ApiError("No files to export", 404)
+        
+        # Create ZIP
+        buffer = io.BytesIO()
+        project_name = project["name"].replace(" ", "_")
+        
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for file in files:
+                zipf.writestr(f"{project_name}/{file['filename']}", file["content"])
+        
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"{project_name}.zip"
+        )
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# HEALTH & INFO ENDPOINTS
+# ============================================================================
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "gemini_configured": bool(GEMINI_KEY),
+        "supabase_configured": bool(SUPABASE_URL and SUPABASE_KEY),
+        "version": "2.0.0"
+    })
 
 
 @app.route("/")
 def index():
-    return render_template("index.html")
-
-
-@app.route("/prompt-studio")
-def prompt_studio():
-    return render_template("prompt-studio.html")
-
-
-@app.route("/project-workbench")
-def project_workbench():
-    return render_template("project-workbench.html")
-
-
-@app.route("/ops-center")
-def ops_center():
-    return render_template("ops-center.html")
-
-
-@app.route("/health")
-def health():
-    backend, _ = db_backend()
-    return jsonify(
-        {
-            "status": "ok",
-            "gemini": bool(GEMINI_KEY),
-            "supabase": bool(SUPABASE_URL),
-            "backend": backend,
-            "data_root": str(FS_BASE_DIR),
-        }
-    )
-
-
-@app.route("/tasks", methods=["GET", "POST", "PUT", "DELETE"])
-@limiter.limit("30 per minute")
-def tasks():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = request.get_json(silent=True) or {}
-    action = request.method.lower()
-    task_id = data.get("id")
-    task = data.get("task")
-    if action in {"post", "put"}:
-        action = "create" if action == "post" else "update"
-    if action == "delete":
-        action = "delete"
-    if action == "get":
-        action = "list"
-    if action in {"create", "update"} and not task:
-        raise ApiError("Task text is required")
-    if action in {"update", "delete"} and not task_id:
-        raise ApiError("Task id is required")
-    result = db_tasks(action, task_id, task)
-    return jsonify(result)
-
-
-@app.route("/agent", methods=["POST"])
-@limiter.limit("10 per minute")
-def agent():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = get_json_body()
-    prompt = data.get("prompt", "")
-    if not prompt:
-        raise ApiError("Prompt is required")
-    intent = parse_agent_intent(prompt)
-    if "error" in intent:
-        return jsonify({"intent": intent, "result": intent}), 502
-    action = intent.get("action")
-    task_id = intent.get("id")
-    task = intent.get("task")
-    result = db_tasks(action, task_id, task)
-    return jsonify({"intent": intent, "result": result})
-
-
-@app.route("/quality-check", methods=["POST"])
-@limiter.limit("15 per minute")
-def quality_check():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = get_json_body()
-    prompt = data.get("prompt", "")
-    constraints = data.get("constraints", "")
-    audience = data.get("audience", "")
-    response = quality_review(prompt, constraints, audience)
-    return jsonify(response)
-
-
-@app.route("/end-to-end-plan", methods=["POST"])
-@limiter.limit("15 per minute")
-def end_to_end_plan():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = get_json_body()
-    goal = data.get("goal", "").strip()
-    audience = data.get("audience", "").strip()
-    ui_style = data.get("ui_style", "").strip()
-    constraints = data.get("constraints", "").strip()
-    safety = data.get("safety", False)
-    authentication = data.get("authentication", False)
-    free_tier = data.get("free_tier", False)
-    if not goal:
-        raise ApiError("Goal is required")
-    response = build_end_to_end_plan(goal, audience, ui_style, constraints, safety, authentication, free_tier)
-    return jsonify(response)
-
-
-@app.route("/alignment-check", methods=["POST"])
-@limiter.limit("15 per minute")
-def alignment_check():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = get_json_body()
-    purpose = data.get("purpose", "")
-    features = data.get("features") or []
-    response = summarize_alignment(purpose, features)
-    return jsonify(response)
-
-
-@app.route("/project-brief", methods=["POST"])
-@limiter.limit("20 per minute")
-def project_brief():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = get_json_body()
-    name = data.get("name", "").strip()
-    purpose = data.get("purpose", "").strip()
-    audience = data.get("audience", "").strip()
-    constraints = data.get("constraints", "").strip()
-    if not name or not purpose:
-        raise ApiError("Project name and purpose are required")
-    conn = get_sqlite_connection()
-    try:
-        cursor = conn.execute(
-            "INSERT INTO project_briefs (name, purpose, audience, constraints) VALUES (?, ?, ?, ?)",
-            (name, purpose, audience, constraints),
-        )
-        conn.commit()
-        return jsonify({"status": "ok", "id": cursor.lastrowid})
-    finally:
-        conn.close()
-
-
-@app.route("/project-briefs", methods=["GET"])
-@limiter.limit("30 per minute")
-def project_briefs():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    conn = get_sqlite_connection()
-    try:
-        rows = conn.execute(
-            "SELECT id, name, purpose, audience, constraints, created_at FROM project_briefs ORDER BY id DESC"
-        ).fetchall()
-        return jsonify({"data": [dict(row) for row in rows]})
-    finally:
-        conn.close()
-
-
-@app.route("/export", methods=["POST"])
-@limiter.limit("5 per minute")
-def export_system():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-    data = get_json_body()
-    system_name = data.get("name", "system").strip() or "system"
-    purpose = data.get("purpose", "").strip()
-    features = data.get("features") or []
-    constraints = data.get("constraints", "").strip()
-    payload, readme = build_export_payload(system_name, purpose, features, constraints)
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as zipf:
-        zipf.writestr(f"{system_name}/README.md", readme)
-        zipf.writestr(f"{system_name}/system.json", json.dumps(payload, indent=2))
-    buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name=f"{system_name}.zip")
+    return jsonify({
+        "service": "Agentic System Builder API",
+        "version": "2.0.0",
+        "author": "John Rish Ladica",
+        "endpoints": [
+            "/health",
+            "/api/auth/register",
+            "/api/auth/login",
+            "/api/auth/me",
+            "/api/projects",
+            "/api/refine-prompt",
+            "/api/generate-plan",
+            "/api/generate-system",
+            "/api/projects/<id>/export"
+        ]
+    })
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Initialize database
+    get_sqlite_connection().close()
+    app.run(host="0.0.0.0", port=5000, debug=False)
