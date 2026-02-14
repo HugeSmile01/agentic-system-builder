@@ -6,10 +6,10 @@ import pathlib
 import secrets
 import sqlite3
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -19,7 +19,7 @@ import jwt
 import google.generativeai as genai
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static")
 app.config.update(
     JSON_SORT_KEYS=False,
     JSONIFY_PRETTYPRINT_REGULAR=False,
@@ -27,7 +27,7 @@ app.config.update(
 )
 
 CORS(app, resources={r"/*": {"origins": "*"}})
-limiter = Limiter(app, key_func=get_remote_address, default_limits=["200 per hour"])
+limiter = Limiter(app=app, key_func=get_remote_address, default_limits=["200 per hour"])
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -38,11 +38,19 @@ GEMINI_KEY = os.getenv("GEMINI_KEY")
 JWT_SECRET = os.getenv("JWT_SECRET", app.config["SECRET_KEY"])
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
-DATA_ROOT = os.getenv("DATA_ROOT", "./generated")
-SQLITE_PATH = os.getenv("SQLITE_PATH", "./data/agentic.db")
+
+# Use /tmp for writable paths on Vercel (read-only filesystem)
+_is_vercel = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+_tmp_base = "/tmp" if _is_vercel else "."
+DATA_ROOT = os.getenv("DATA_ROOT", os.path.join(_tmp_base, "generated"))
+SQLITE_PATH = os.getenv("SQLITE_PATH", os.path.join(_tmp_base, "data", "agentic.db"))
 
 FS_BASE_DIR = pathlib.Path(DATA_ROOT).resolve()
-FS_BASE_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    FS_BASE_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    FS_BASE_DIR = pathlib.Path("/tmp/generated").resolve()
+    FS_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
@@ -62,7 +70,7 @@ class ApiError(Exception):
 
 
 def json_error(message, status=400, detail=None):
-    payload = {"error": message, "timestamp": datetime.utcnow().isoformat()}
+    payload = {"error": message, "timestamp": datetime.now(timezone.utc).isoformat()}
     if detail:
         payload["detail"] = detail
     return jsonify(payload), status
@@ -88,7 +96,11 @@ def get_supabase_client():
 
 def get_sqlite_connection():
     sqlite_path = pathlib.Path(SQLITE_PATH)
-    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        sqlite_path = pathlib.Path("/tmp/data/agentic.db")
+        sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(sqlite_path)
     conn.row_factory = sqlite3.Row
     
@@ -161,8 +173,8 @@ def generate_token(user_id, email):
     payload = {
         "user_id": user_id,
         "email": email,
-        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
-        "iat": datetime.utcnow()
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS),
+        "iat": datetime.now(timezone.utc)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -573,7 +585,7 @@ def clean_code_output(code_text):
 def handle_api_error(error):
     return jsonify({
         "error": error.message,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }), error.status_code
 
 
@@ -990,7 +1002,7 @@ def export_project(project_id):
 def health():
     return jsonify({
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "gemini_configured": bool(GEMINI_KEY),
         "supabase_configured": bool(SUPABASE_URL and SUPABASE_KEY),
         "version": "2.0.0"
@@ -999,6 +1011,11 @@ def health():
 
 @app.route("/")
 def index():
+    return send_from_directory(".", "index.html")
+
+
+@app.route("/api")
+def api_info():
     return jsonify({
         "service": "Agentic System Builder API",
         "version": "2.0.0",
