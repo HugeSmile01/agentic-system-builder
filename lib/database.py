@@ -68,6 +68,16 @@ _SCHEMA_SQL = [
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (project_id) REFERENCES projects (id)
     )""",
+    """CREATE TABLE IF NOT EXISTS project_collaborators (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        role TEXT DEFAULT 'viewer',
+        added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects (id),
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        UNIQUE(project_id, user_id)
+    )""",
 ]
 
 

@@ -15,6 +15,11 @@
 - **Project Management** — Create, iterate, and track projects with version history
 - **Export System** — Download generated projects as ready-to-deploy ZIP archives
 - **JWT Authentication** — Secure token-based login and registration
+- **Password Reset** — Token-based password recovery system
+- **Profile Management** — Update user profile and change password
+- **Project Collaboration** — Share projects with team members (viewer/editor roles)
+- **Search & Filter** — Find projects quickly with search and status filters
+- **Pagination** — Efficient handling of large project lists
 - **Rate Limiting** — Built-in API protection against abuse
 - **Mobile-Friendly** — Responsive dark-themed interface
 
@@ -93,20 +98,29 @@ Add `GEMINI_KEY` and `JWT_SECRET` as environment variables in your Vercel dashbo
 
 ### Authentication
 
-| Method | Endpoint              | Description         |
-| ------ | --------------------- | ------------------- |
-| POST   | `/api/auth/register`  | Create account      |
-| POST   | `/api/auth/login`     | Sign in             |
-| GET    | `/api/auth/me`        | Current user info   |
+| Method | Endpoint                     | Description              |
+| ------ | ---------------------------- | ------------------------ |
+| POST   | `/api/auth/register`         | Create account           |
+| POST   | `/api/auth/login`            | Sign in                  |
+| GET    | `/api/auth/me`               | Current user info        |
+| PUT    | `/api/auth/update-profile`   | Update profile           |
+| PUT    | `/api/auth/change-password`  | Change password          |
+| POST   | `/api/auth/forgot-password`  | Request password reset   |
+| POST   | `/api/auth/reset-password`   | Reset password with token|
 
 ### Projects
 
-| Method | Endpoint                          | Description          |
-| ------ | --------------------------------- | -------------------- |
-| GET    | `/api/projects`                   | List projects        |
-| POST   | `/api/projects`                   | Create project       |
-| GET    | `/api/projects/:id`               | Project details      |
-| GET    | `/api/projects/:id/export`        | Download ZIP         |
+| Method | Endpoint                                 | Description              |
+| ------ | ---------------------------------------- | ------------------------ |
+| GET    | `/api/projects`                          | List projects (with search, filter, pagination) |
+| POST   | `/api/projects`                          | Create project           |
+| GET    | `/api/projects/:id`                      | Project details          |
+| PUT    | `/api/projects/:id`                      | Update project           |
+| DELETE | `/api/projects/:id`                      | Delete project           |
+| GET    | `/api/projects/:id/export`               | Download ZIP             |
+| GET    | `/api/projects/:id/collaborators`        | List collaborators       |
+| POST   | `/api/projects/:id/collaborators`        | Add collaborator         |
+| DELETE | `/api/projects/:id/collaborators/:user_id` | Remove collaborator   |
 
 ### Generation Pipeline
 
