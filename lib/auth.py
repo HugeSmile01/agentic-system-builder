@@ -1,14 +1,16 @@
 """JWT authentication helpers and decorators."""
 
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import jwt
 from flask import request
 
-JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable must be set")
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 

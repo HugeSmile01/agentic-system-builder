@@ -29,55 +29,63 @@ _supabase_client = None
 _SCHEMA_SQL = [
     """CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        full_name TEXT,
+        email TEXT UNIQUE NOT NULL CHECK(length(email) <= 255),
+        password_hash TEXT NOT NULL CHECK(length(password_hash) <= 255),
+        full_name TEXT CHECK(length(full_name) <= 255),
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_login TEXT
     )""",
+    """CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)""",
     """CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        description TEXT,
-        goal TEXT NOT NULL,
-        audience TEXT,
-        ui_style TEXT,
-        constraints TEXT,
-        status TEXT DEFAULT 'draft',
+        name TEXT NOT NULL CHECK(length(name) <= 255 AND length(name) > 0),
+        description TEXT CHECK(length(description) <= 1000),
+        goal TEXT NOT NULL CHECK(length(goal) <= 5000 AND length(goal) > 0),
+        audience TEXT CHECK(length(audience) <= 500),
+        ui_style TEXT CHECK(length(ui_style) <= 500),
+        constraints TEXT CHECK(length(constraints) <= 1000),
+        status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'generated', 'archived')),
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     )""",
+    """CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)""",
     """CREATE TABLE IF NOT EXISTS generated_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER NOT NULL,
-        filename TEXT NOT NULL,
+        filename TEXT NOT NULL CHECK(length(filename) <= 255),
         content TEXT NOT NULL,
-        file_type TEXT,
+        file_type TEXT CHECK(length(file_type) <= 50),
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES projects (id)
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
     )""",
+    """CREATE INDEX IF NOT EXISTS idx_generated_files_project_id ON generated_files(project_id)""",
     """CREATE TABLE IF NOT EXISTS project_iterations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER NOT NULL,
-        iteration_number INTEGER NOT NULL,
+        iteration_number INTEGER NOT NULL CHECK(iteration_number > 0),
         refined_prompt TEXT NOT NULL,
         plan TEXT,
         review_notes TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES projects (id)
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+        UNIQUE(project_id, iteration_number)
     )""",
+    """CREATE INDEX IF NOT EXISTS idx_project_iterations_project_id ON project_iterations(project_id)""",
     """CREATE TABLE IF NOT EXISTS project_collaborators (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
-        role TEXT DEFAULT 'viewer',
+        role TEXT DEFAULT 'viewer' CHECK(role IN ('viewer', 'editor')),
         added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES projects (id),
-        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
         UNIQUE(project_id, user_id)
     )""",
+    """CREATE INDEX IF NOT EXISTS idx_project_collaborators_project_id ON project_collaborators(project_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_project_collaborators_user_id ON project_collaborators(user_id)""",
 ]
 
 
