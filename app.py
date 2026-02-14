@@ -49,7 +49,7 @@ FS_BASE_DIR = pathlib.Path(DATA_ROOT).resolve()
 try:
     FS_BASE_DIR.mkdir(parents=True, exist_ok=True)
 except OSError:
-    FS_BASE_DIR = pathlib.Path("/tmp/generated").resolve()
+    FS_BASE_DIR = pathlib.Path(_tmp_base, "generated").resolve()
     FS_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 if GEMINI_KEY:
@@ -99,7 +99,7 @@ def get_sqlite_connection():
     try:
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
-        sqlite_path = pathlib.Path("/tmp/data/agentic.db")
+        sqlite_path = pathlib.Path(_tmp_base, "data", "agentic.db")
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(sqlite_path)
     conn.row_factory = sqlite3.Row
@@ -1011,7 +1011,7 @@ def health():
 
 @app.route("/")
 def index():
-    return send_from_directory(".", "index.html")
+    return send_from_directory(app.root_path, "index.html")
 
 
 @app.route("/api")
