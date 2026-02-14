@@ -98,6 +98,16 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment instructions cov
 
 ## API Reference
 
+See [API.md](API.md) for complete API documentation including:
+- Authentication endpoints (register, login, password reset)
+- Project management (CRUD operations)
+- Collaboration features (add/remove collaborators)
+- Generation pipeline (refine, plan, generate)
+- Rate limits and error handling
+- Request/response examples
+
+Quick reference:
+
 ### Authentication
 
 | Method | Endpoint                     | Description              |
