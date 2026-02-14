@@ -1,15 +1,28 @@
 """JWT authentication helpers and decorators."""
 
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import jwt
 from flask import request
 
-JWT_SECRET = os.getenv("JWT_SECRET")
-if not JWT_SECRET:
-    raise RuntimeError("JWT_SECRET environment variable must be set")
+_jwt_secret_cache = None
+_jwt_secret_lock = threading.Lock()
+
+def _get_jwt_secret():
+    """Get JWT_SECRET from environment (cached, thread-safe), raising an error if not set."""
+    global _jwt_secret_cache
+    if _jwt_secret_cache is None:
+        with _jwt_secret_lock:
+            # Double-check pattern to avoid race condition
+            if _jwt_secret_cache is None:
+                secret = os.getenv("JWT_SECRET")
+                if not secret:
+                    raise RuntimeError("JWT_SECRET environment variable must be set")
+                _jwt_secret_cache = secret
+    return _jwt_secret_cache
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
@@ -32,13 +45,13 @@ def generate_token(user_id, email):
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS),
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, _get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
 def verify_token(token):
     """Decode and validate a JWT. Raises *ApiError* on failure."""
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return jwt.decode(token, _get_jwt_secret(), algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise ApiError("Token has expired", 401)
     except jwt.InvalidTokenError:
@@ -53,13 +66,13 @@ def generate_password_reset_token(email):
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, _get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
 def verify_password_reset_token(token):
     """Decode and validate a password reset token. Raises *ApiError* on failure."""
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, _get_jwt_secret(), algorithms=[JWT_ALGORITHM])
         if payload.get("purpose") != "password_reset":
             raise ApiError("Invalid token purpose", 401)
         return payload

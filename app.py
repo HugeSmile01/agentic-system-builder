@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import zipfile
 from datetime import datetime, timezone
 
@@ -43,16 +44,20 @@ from lib.agents import (
 # Environment validation
 # ---------------------------------------------------------------------------
 
-# Validate required environment variables at startup
-if not GEMINI_KEY:
-    logging.error("FATAL: GEMINI_KEY environment variable is required")
-    raise RuntimeError("GEMINI_KEY environment variable must be set")
+def _validate_environment():
+    """Validate required environment variables. Called on first request."""
+    # Validate GEMINI_KEY
+    if not GEMINI_KEY:
+        logging.error("FATAL: GEMINI_KEY environment variable is required")
+        raise RuntimeError("GEMINI_KEY environment variable must be set")
+    
+    # Validate JWT_SECRET
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not jwt_secret or len(jwt_secret) < 32:
+        logging.error("FATAL: JWT_SECRET must be at least 32 characters")
+        raise RuntimeError("JWT_SECRET environment variable must be at least 32 characters")
 
-JWT_SECRET = os.getenv("JWT_SECRET")
-if not JWT_SECRET or len(JWT_SECRET) < 32:
-    logging.error("FATAL: JWT_SECRET must be at least 32 characters")
-    raise RuntimeError("JWT_SECRET environment variable must be at least 32 characters")
-
+# Get or generate SECRET_KEY
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY or len(SECRET_KEY) < 32:
     SECRET_KEY = secrets.token_hex(32)
@@ -103,6 +108,25 @@ def add_security_headers(response):
         "connect-src 'self'"
     )
     return response
+
+
+# ---------------------------------------------------------------------------
+# Environment validation on first request
+# ---------------------------------------------------------------------------
+
+_env_validated = False
+_env_validation_lock = threading.Lock()
+
+@app.before_request
+def validate_environment_once():
+    """Validate environment variables on the first request (thread-safe)."""
+    global _env_validated
+    if not _env_validated:
+        with _env_validation_lock:
+            # Double-check pattern to avoid race condition
+            if not _env_validated:
+                _validate_environment()
+                _env_validated = True
 
 
 # ---------------------------------------------------------------------------
