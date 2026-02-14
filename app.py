@@ -357,6 +357,45 @@ def reset_password():
 
 
 # ---------------------------------------------------------------------------
+# Authorization helpers
+# ---------------------------------------------------------------------------
+
+def check_project_access(conn, project_id, user_id, required_role=None):
+    """
+    Check if user has access to a project.
+    Returns (has_access, is_owner, user_role)
+    """
+    # Check if user is owner
+    project = conn.execute(
+        "SELECT user_id FROM projects WHERE id = ?",
+        (project_id,)
+    ).fetchone()
+    
+    if not project:
+        return False, False, None
+    
+    if project["user_id"] == user_id:
+        return True, True, "owner"
+    
+    # Check if user is a collaborator
+    collaborator = conn.execute(
+        "SELECT role FROM project_collaborators WHERE project_id = ? AND user_id = ?",
+        (project_id, user_id)
+    ).fetchone()
+    
+    if not collaborator:
+        return False, False, None
+    
+    user_role = collaborator["role"]
+    
+    # Check role permission
+    if required_role == "editor" and user_role == "viewer":
+        return True, False, user_role  # Has access but not permission
+    
+    return True, False, user_role
+
+
+# ---------------------------------------------------------------------------
 # Project endpoints
 # ---------------------------------------------------------------------------
 
@@ -442,13 +481,25 @@ def create_project():
 def get_project(project_id):
     conn = get_sqlite_connection()
     try:
-        project = conn.execute("SELECT * FROM projects WHERE id = ? AND user_id = ?", (project_id, request.user_id)).fetchone()
+        # Check access (owner or collaborator)
+        has_access, is_owner, role = check_project_access(conn, project_id, request.user_id)
+        if not has_access:
+            raise ApiError("Project not found", 404)
+        
+        # Optimized query: fetch project with related data
+        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
             raise ApiError("Project not found", 404)
 
         iterations = conn.execute("SELECT * FROM project_iterations WHERE project_id = ? ORDER BY iteration_number DESC", (project_id,)).fetchall()
         files = conn.execute("SELECT * FROM generated_files WHERE project_id = ?", (project_id,)).fetchall()
-        return jsonify({"project": dict(project), "iterations": [dict(i) for i in iterations], "files": [dict(f) for f in files]})
+        
+        return jsonify({
+            "project": dict(project),
+            "iterations": [dict(i) for i in iterations],
+            "files": [dict(f) for f in files],
+            "access": {"role": role, "is_owner": is_owner}
+        })
     finally:
         conn.close()
 
@@ -466,13 +517,12 @@ def update_project(project_id):
     
     conn = get_sqlite_connection()
     try:
-        project = conn.execute(
-            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
-            (project_id, request.user_id)
-        ).fetchone()
-        
-        if not project:
+        # Check access with editor permission required
+        has_access, is_owner, role = check_project_access(conn, project_id, request.user_id, required_role="editor")
+        if not has_access:
             raise ApiError("Project not found", 404)
+        if role == "viewer":
+            raise ApiError("Insufficient permissions. Editor role required.", 403)
         
         conn.execute(
             "UPDATE projects SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -488,24 +538,26 @@ def update_project(project_id):
 @app.route("/api/projects/<int:project_id>", methods=["DELETE"])
 @require_auth
 def delete_project(project_id):
-    """Delete a project and all associated data."""
+    """Delete a project and all associated data (owner only)."""
     conn = get_sqlite_connection()
     try:
+        # Only owner can delete
         project = conn.execute(
             "SELECT id FROM projects WHERE id = ? AND user_id = ?",
             (project_id, request.user_id)
         ).fetchone()
         
         if not project:
-            raise ApiError("Project not found", 404)
+            raise ApiError("Project not found or insufficient permissions", 404)
         
-        # Delete associated data
+        # Delete associated data (CASCADE should handle this, but being explicit)
         conn.execute("DELETE FROM generated_files WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM project_iterations WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM project_collaborators WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         conn.commit()
         
+        logger.info(f"User {request.user_id} deleted project {project_id}")
         return jsonify({"message": "Project deleted successfully"})
     finally:
         conn.close()
@@ -757,7 +809,12 @@ def export_project(project_id):
     """Export project as a downloadable ZIP archive."""
     conn = get_sqlite_connection()
     try:
-        project = conn.execute("SELECT name FROM projects WHERE id = ? AND user_id = ?", (project_id, request.user_id)).fetchone()
+        # Check access (owner or collaborator)
+        has_access, is_owner, role = check_project_access(conn, project_id, request.user_id)
+        if not has_access:
+            raise ApiError("Project not found", 404)
+        
+        project = conn.execute("SELECT name FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
             raise ApiError("Project not found", 404)
 
@@ -771,6 +828,8 @@ def export_project(project_id):
             for f in files:
                 zf.writestr(f"{project_name}/{f['filename']}", f["content"])
         buf.seek(0)
+        
+        logger.info(f"User {request.user_id} exported project {project_id}")
         return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=f"{project_name}.zip")
     finally:
         conn.close()
