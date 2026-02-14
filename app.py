@@ -110,8 +110,11 @@ def add_security_headers(response):
 # ---------------------------------------------------------------------------
 
 def validate_email(email):
-    """Validate email format."""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    """Validate email format (RFC 5322 compliant)."""
+    if not email or len(email) > 255:
+        return False
+    # More comprehensive email validation pattern
+    pattern = r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
     return re.match(pattern, email) is not None
 
 def sanitize_text_input(text, max_length=10000):
@@ -783,10 +786,14 @@ def generate_system_endpoint():
         try:
             conn.execute("DELETE FROM generated_files WHERE project_id = ?", (project_id,))
             for filename, content in final_files.items():
-                # Limit file size to prevent database bloat
+                # Validate file size - reject if too large
                 if len(content) > 1_000_000:  # 1MB limit per file
-                    logger.warning(f"File {filename} exceeds 1MB, truncating")
-                    content = content[:1_000_000] + "\n\n# ... (truncated)"
+                    logger.error(f"File {filename} exceeds 1MB limit ({len(content)} bytes)")
+                    raise ApiError(
+                        f"Generated file '{filename}' exceeds 1MB limit. "
+                        "Try simplifying your project or breaking it into smaller components.",
+                        400
+                    )
                 file_type = filename.rsplit(".", 1)[-1] if "." in filename else "txt"
                 conn.execute("INSERT INTO generated_files (project_id, filename, content, file_type) VALUES (?, ?, ?, ?)", (project_id, filename, content, file_type))
             conn.execute(
