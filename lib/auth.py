@@ -1,6 +1,7 @@
 """JWT authentication helpers and decorators."""
 
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -8,15 +9,19 @@ import jwt
 from flask import request
 
 _jwt_secret_cache = None
+_jwt_secret_lock = threading.Lock()
 
 def _get_jwt_secret():
-    """Get JWT_SECRET from environment (cached), raising an error if not set."""
+    """Get JWT_SECRET from environment (cached, thread-safe), raising an error if not set."""
     global _jwt_secret_cache
     if _jwt_secret_cache is None:
-        secret = os.getenv("JWT_SECRET")
-        if not secret:
-            raise RuntimeError("JWT_SECRET environment variable must be set")
-        _jwt_secret_cache = secret
+        with _jwt_secret_lock:
+            # Double-check pattern to avoid race condition
+            if _jwt_secret_cache is None:
+                secret = os.getenv("JWT_SECRET")
+                if not secret:
+                    raise RuntimeError("JWT_SECRET environment variable must be set")
+                _jwt_secret_cache = secret
     return _jwt_secret_cache
 
 JWT_ALGORITHM = "HS256"
