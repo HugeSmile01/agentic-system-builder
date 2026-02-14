@@ -79,12 +79,12 @@ vercel --prod
 
 #### 3. Configure Environment Variables
 
-In your Vercel dashboard, add these environment variables:
+In your Vercel dashboard (Project Settings → Environment Variables), add:
 
-- `GEMINI_KEY`
-- `JWT_SECRET`
-- `SECRET_KEY`
-- `ALLOWED_ORIGINS` (set to your production domain, e.g., `https://yourdomain.com`)
+- `GEMINI_KEY` — your Google Gemini API key
+- `JWT_SECRET` — at least 32 characters (generate with: `python -c "import secrets; print(secrets.token_hex(32))"`)
+- `SECRET_KEY` *(optional)* — Flask internal secret; auto-generated if omitted (app uses JWT for auth)
+- `ALLOWED_ORIGINS` — your production domain (e.g., `https://yourdomain.com`)
 
 **Important for Production:**
 - Set `ALLOWED_ORIGINS` to your specific domain to prevent CSRF attacks
