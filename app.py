@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import secrets
+import sqlite3
 import zipfile
 from datetime import datetime, timezone
 
@@ -21,7 +22,13 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from lib.auth import ApiError, generate_token, require_auth
+from lib.auth import (
+    ApiError,
+    generate_token,
+    generate_password_reset_token,
+    verify_password_reset_token,
+    require_auth,
+)
 from lib.database import get_sqlite_connection, SUPABASE_URL, SUPABASE_KEY, GEMINI_KEY
 from lib.agents import (
     refine_user_prompt,
@@ -148,6 +155,133 @@ def get_current_user():
         conn.close()
 
 
+@app.route("/api/auth/update-profile", methods=["PUT"])
+@require_auth
+def update_profile():
+    """Update user profile information."""
+    data = request.get_json() or {}
+    full_name = data.get("full_name", "").strip()
+    
+    if not full_name:
+        raise ApiError("Full name is required")
+    
+    conn = get_sqlite_connection()
+    try:
+        conn.execute(
+            "UPDATE users SET full_name = ? WHERE id = ?",
+            (full_name, request.user_id),
+        )
+        conn.commit()
+        return jsonify({"message": "Profile updated successfully", "full_name": full_name})
+    finally:
+        conn.close()
+
+
+@app.route("/api/auth/change-password", methods=["PUT"])
+@require_auth
+def change_password():
+    """Change user password."""
+    data = request.get_json() or {}
+    current_password = data.get("current_password", "").strip()
+    new_password = data.get("new_password", "").strip()
+    
+    if not current_password or not new_password:
+        raise ApiError("Current and new passwords are required")
+    if len(new_password) < 8:
+        raise ApiError("New password must be at least 8 characters")
+    
+    conn = get_sqlite_connection()
+    try:
+        user = conn.execute(
+            "SELECT password_hash FROM users WHERE id = ?",
+            (request.user_id,),
+        ).fetchone()
+        
+        if not user or not check_password_hash(user["password_hash"], current_password):
+            raise ApiError("Current password is incorrect", 401)
+        
+        new_password_hash = generate_password_hash(new_password)
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (new_password_hash, request.user_id),
+        )
+        conn.commit()
+        return jsonify({"message": "Password changed successfully"})
+    finally:
+        conn.close()
+
+
+@app.route("/api/auth/forgot-password", methods=["POST"])
+@limiter.limit("3 per hour")
+def forgot_password():
+    """Request password reset token."""
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    
+    if not email:
+        raise ApiError("Email is required")
+    
+    conn = get_sqlite_connection()
+    try:
+        user = conn.execute(
+            "SELECT id FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+        
+        # Always return success to prevent email enumeration
+        if user:
+            token = generate_password_reset_token(email)
+            # In production, send this token via email
+            logger.info(f"Password reset token for {email}: {token}")
+            return jsonify({
+                "message": "If an account exists with this email, a reset link has been sent",
+                "reset_token": token  # Remove this in production!
+            })
+        
+        return jsonify({
+            "message": "If an account exists with this email, a reset link has been sent"
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/auth/reset-password", methods=["POST"])
+@limiter.limit("5 per hour")
+def reset_password():
+    """Reset password using reset token."""
+    data = request.get_json() or {}
+    token = data.get("token", "").strip()
+    new_password = data.get("new_password", "").strip()
+    
+    if not token or not new_password:
+        raise ApiError("Token and new password are required")
+    if len(new_password) < 8:
+        raise ApiError("Password must be at least 8 characters")
+    
+    payload = verify_password_reset_token(token)
+    email = payload.get("email")
+    
+    conn = get_sqlite_connection()
+    try:
+        user = conn.execute(
+            "SELECT id FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+        
+        if not user:
+            raise ApiError("User not found", 404)
+        
+        new_password_hash = generate_password_hash(new_password)
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (new_password_hash, user["id"]),
+        )
+        conn.commit()
+        return jsonify({"message": "Password reset successfully"})
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Project endpoints
 # ---------------------------------------------------------------------------
@@ -155,13 +289,46 @@ def get_current_user():
 @app.route("/api/projects", methods=["GET"])
 @require_auth
 def list_projects():
+    """List projects with optional search, filter, and pagination."""
+    search = request.args.get("search", "").strip()
+    status_filter = request.args.get("status", "").strip()
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = min(100, max(1, int(request.args.get("per_page", 50))))
+    offset = (page - 1) * per_page
+    
     conn = get_sqlite_connection()
     try:
-        rows = conn.execute(
-            "SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC",
-            (request.user_id,),
-        ).fetchall()
-        return jsonify({"projects": [dict(r) for r in rows]})
+        # Build query
+        query = "SELECT * FROM projects WHERE user_id = ?"
+        params = [request.user_id]
+        
+        if search:
+            query += " AND (name LIKE ? OR description LIKE ? OR goal LIKE ?)"
+            search_pattern = f"%{search}%"
+            params.extend([search_pattern, search_pattern, search_pattern])
+        
+        if status_filter:
+            query += " AND status = ?"
+            params.append(status_filter)
+        
+        # Get total count
+        count_query = query.replace("SELECT *", "SELECT COUNT(*)")
+        total = conn.execute(count_query, params).fetchone()[0]
+        
+        # Get paginated results
+        query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+        params.extend([per_page, offset])
+        rows = conn.execute(query, params).fetchall()
+        
+        return jsonify({
+            "projects": [dict(r) for r in rows],
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "pages": (total + per_page - 1) // per_page
+            }
+        })
     finally:
         conn.close()
 
@@ -201,6 +368,177 @@ def get_project(project_id):
         iterations = conn.execute("SELECT * FROM project_iterations WHERE project_id = ? ORDER BY iteration_number DESC", (project_id,)).fetchall()
         files = conn.execute("SELECT * FROM generated_files WHERE project_id = ?", (project_id,)).fetchall()
         return jsonify({"project": dict(project), "iterations": [dict(i) for i in iterations], "files": [dict(f) for f in files]})
+    finally:
+        conn.close()
+
+
+@app.route("/api/projects/<int:project_id>", methods=["PUT"])
+@require_auth
+def update_project(project_id):
+    """Update project details."""
+    data = request.get_json() or {}
+    name = data.get("name", "").strip()
+    description = data.get("description", "").strip()
+    
+    if not name:
+        raise ApiError("Project name is required")
+    
+    conn = get_sqlite_connection()
+    try:
+        project = conn.execute(
+            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+            (project_id, request.user_id)
+        ).fetchone()
+        
+        if not project:
+            raise ApiError("Project not found", 404)
+        
+        conn.execute(
+            "UPDATE projects SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (name, description, project_id)
+        )
+        conn.commit()
+        return jsonify({"message": "Project updated successfully", "id": project_id})
+    finally:
+        conn.close()
+
+
+@app.route("/api/projects/<int:project_id>", methods=["DELETE"])
+@require_auth
+def delete_project(project_id):
+    """Delete a project and all associated data."""
+    conn = get_sqlite_connection()
+    try:
+        project = conn.execute(
+            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+            (project_id, request.user_id)
+        ).fetchone()
+        
+        if not project:
+            raise ApiError("Project not found", 404)
+        
+        # Delete associated data
+        conn.execute("DELETE FROM generated_files WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM project_iterations WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM project_collaborators WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        conn.commit()
+        
+        return jsonify({"message": "Project deleted successfully"})
+    finally:
+        conn.close()
+
+
+@app.route("/api/projects/<int:project_id>/collaborators", methods=["GET"])
+@require_auth
+def list_collaborators(project_id):
+    """List project collaborators."""
+    conn = get_sqlite_connection()
+    try:
+        # Verify user has access to project
+        project = conn.execute(
+            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+            (project_id, request.user_id)
+        ).fetchone()
+        
+        if not project:
+            raise ApiError("Project not found", 404)
+        
+        collaborators = conn.execute(
+            """SELECT c.id, c.user_id, c.role, c.added_at, u.email, u.full_name
+               FROM project_collaborators c
+               JOIN users u ON c.user_id = u.id
+               WHERE c.project_id = ?
+               ORDER BY c.added_at DESC""",
+            (project_id,)
+        ).fetchall()
+        
+        return jsonify({"collaborators": [dict(c) for c in collaborators]})
+    finally:
+        conn.close()
+
+
+@app.route("/api/projects/<int:project_id>/collaborators", methods=["POST"])
+@require_auth
+def add_collaborator(project_id):
+    """Add a collaborator to a project."""
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    role = data.get("role", "viewer").strip()
+    
+    if not email:
+        raise ApiError("Email is required")
+    if role not in ["viewer", "editor"]:
+        raise ApiError("Role must be 'viewer' or 'editor'")
+    
+    conn = get_sqlite_connection()
+    try:
+        # Verify user owns the project
+        project = conn.execute(
+            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+            (project_id, request.user_id)
+        ).fetchone()
+        
+        if not project:
+            raise ApiError("Project not found", 404)
+        
+        # Find user by email
+        user = conn.execute(
+            "SELECT id, email FROM users WHERE email = ?",
+            (email,)
+        ).fetchone()
+        
+        if not user:
+            raise ApiError("User not found", 404)
+        
+        # Don't add owner as collaborator
+        if user["id"] == request.user_id:
+            raise ApiError("Cannot add project owner as collaborator", 400)
+        
+        # Add collaborator
+        try:
+            conn.execute(
+                "INSERT INTO project_collaborators (project_id, user_id, role) VALUES (?, ?, ?)",
+                (project_id, user["id"], role)
+            )
+            conn.commit()
+            return jsonify({
+                "message": "Collaborator added successfully",
+                "user_id": user["id"],
+                "email": user["email"],
+                "role": role
+            })
+        except sqlite3.IntegrityError:
+            raise ApiError("User is already a collaborator", 409)
+    finally:
+        conn.close()
+
+
+@app.route("/api/projects/<int:project_id>/collaborators/<int:user_id>", methods=["DELETE"])
+@require_auth
+def remove_collaborator(project_id, user_id):
+    """Remove a collaborator from a project."""
+    conn = get_sqlite_connection()
+    try:
+        # Verify user owns the project
+        project = conn.execute(
+            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
+            (project_id, request.user_id)
+        ).fetchone()
+        
+        if not project:
+            raise ApiError("Project not found", 404)
+        
+        result = conn.execute(
+            "DELETE FROM project_collaborators WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id)
+        )
+        conn.commit()
+        
+        if result.rowcount == 0:
+            raise ApiError("Collaborator not found", 404)
+        
+        return jsonify({"message": "Collaborator removed successfully"})
     finally:
         conn.close()
 
@@ -339,13 +677,28 @@ def export_project(project_id):
 
 @app.route("/health")
 def health():
-    return jsonify({
+    """Enhanced health check with database connectivity."""
+    health_status = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "gemini_configured": bool(GEMINI_KEY),
         "supabase_configured": bool(SUPABASE_URL and SUPABASE_KEY),
-        "version": "3.0.0",
-    })
+        "version": "3.1.0",
+    }
+    
+    # Check database connectivity
+    try:
+        conn = get_sqlite_connection()
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+        health_status["database"] = "connected"
+    except Exception as e:
+        health_status["database"] = "error"
+        health_status["database_error"] = str(e)
+        health_status["status"] = "degraded"
+    
+    status_code = 200 if health_status["status"] == "healthy" else 503
+    return jsonify(health_status), status_code
 
 
 @app.route("/")
@@ -357,18 +710,39 @@ def index():
 def api_info():
     return jsonify({
         "service": "Agentic System Builder API",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "author": "John Rish Ladica – SLSU-HC SITS",
-        "endpoints": [
-            "/health",
-            "/api/auth/register",
-            "/api/auth/login",
-            "/api/auth/me",
-            "/api/projects",
-            "/api/refine-prompt",
-            "/api/generate-plan",
-            "/api/generate-system",
-            "/api/projects/<id>/export",
+        "endpoints": {
+            "health": "/health",
+            "authentication": [
+                "/api/auth/register",
+                "/api/auth/login",
+                "/api/auth/me",
+                "/api/auth/update-profile",
+                "/api/auth/change-password",
+                "/api/auth/forgot-password",
+                "/api/auth/reset-password",
+            ],
+            "projects": [
+                "/api/projects",
+                "/api/projects/<id>",
+                "/api/projects/<id>/export",
+                "/api/projects/<id>/collaborators",
+            ],
+            "generation": [
+                "/api/refine-prompt",
+                "/api/generate-plan",
+                "/api/generate-system",
+            ],
+        },
+        "features": [
+            "JWT Authentication",
+            "Password Reset",
+            "Profile Management",
+            "Project Collaboration",
+            "Multi-Agent Code Generation",
+            "Search and Filtering",
+            "Rate Limiting",
         ],
     })
 

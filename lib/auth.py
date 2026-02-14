@@ -43,6 +43,30 @@ def verify_token(token):
         raise ApiError("Invalid token", 401)
 
 
+def generate_password_reset_token(email):
+    """Create a short-lived token for password reset."""
+    payload = {
+        "email": email,
+        "purpose": "password_reset",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def verify_password_reset_token(token):
+    """Decode and validate a password reset token. Raises *ApiError* on failure."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("purpose") != "password_reset":
+            raise ApiError("Invalid token purpose", 401)
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise ApiError("Reset token has expired", 401)
+    except jwt.InvalidTokenError:
+        raise ApiError("Invalid reset token", 401)
+
+
 def require_auth(f):
     """Flask route decorator that enforces Bearer-token authentication."""
 
