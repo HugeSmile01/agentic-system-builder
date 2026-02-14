@@ -1,1356 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#0a0a0a">
-    <title>Agentic Builder</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-primary: #0a0a0a;
-            --bg-secondary: #141414;
-            --bg-card: #1a1a1a;
-            --bg-input: #222222;
-            --text-primary: #f5f5f5;
-            --text-secondary: #a8a8a8;
-            --text-tertiary: #666666;
-            --accent-primary: #ff6b35;
-            --accent-secondary: #ffa726;
-            --accent-glow: rgba(255, 107, 53, 0.15);
-            --accent-glow-strong: rgba(255, 107, 53, 0.3);
-            --border: #2a2a2a;
-            --border-focus: #ff6b35;
-            --success: #4ade80;
-            --warning: #fbbf24;
-            --error: #ef4444;
-            --safe-area-top: env(safe-area-inset-top);
-            --safe-area-bottom: env(safe-area-inset-bottom);
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        body {
-            font-family: 'Crimson Pro', serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            min-height: 100vh;
-            overflow-x: hidden;
-            padding-top: var(--safe-area-top);
-            padding-bottom: var(--safe-area-bottom);
-            line-height: 1.6;
-        }
-
-        /* Animated gradient background */
-        .bg-gradient {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            background: 
-                radial-gradient(circle at 20% 50%, rgba(255, 107, 53, 0.05) 0%, transparent 50%),
-                radial-gradient(circle at 80% 80%, rgba(255, 167, 38, 0.05) 0%, transparent 50%);
-            animation: gradientShift 15s ease infinite;
-        }
-
-        @keyframes gradientShift {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-
-        /* Main container */
-        .container {
-            position: relative;
-            z-index: 1;
-            max-width: 100%;
-            min-height: 100vh;
-            padding: 0 20px 100px;
-        }
-
-        /* Page transitions */
-        .page {
-            display: none;
-            animation: fadeIn 0.4s ease-out;
-        }
-
-        .page.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Header */
-        .header {
-            padding: 24px 0;
-            text-align: center;
-            border-bottom: 1px solid var(--border);
-            margin-bottom: 24px;
-        }
-
-        .logo {
-            font-size: 28px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            letter-spacing: -0.01em;
-            margin-bottom: 4px;
-        }
-
-        .tagline {
-            font-size: 13px;
-            color: var(--text-tertiary);
-            font-family: 'JetBrains Mono', monospace;
-            letter-spacing: 0.05em;
-        }
-
-        /* Auth forms */
-        .auth-container {
-            max-width: 400px;
-            margin: 60px auto 0;
-            padding: 0 20px;
-        }
-
-        .auth-title {
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            text-align: center;
-        }
-
-        .auth-subtitle {
-            font-size: 15px;
-            color: var(--text-secondary);
-            text-align: center;
-            margin-bottom: 32px;
-        }
-
-        /* Form elements */
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-label {
-            display: block;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-
-        .form-input {
-            width: 100%;
-            padding: 14px 16px;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            color: var(--text-primary);
-            font-size: 16px;
-            font-family: inherit;
-            transition: all 0.3s ease;
-        }
-
-        .form-input:focus {
-            outline: none;
-            border-color: var(--border-focus);
-            box-shadow: 0 0 0 3px var(--accent-glow);
-            background: var(--bg-secondary);
-        }
-
-        .form-textarea {
-            width: 100%;
-            min-height: 140px;
-            padding: 16px;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            color: var(--text-primary);
-            font-size: 15px;
-            font-family: inherit;
-            resize: vertical;
-            transition: all 0.3s ease;
-        }
-
-        .form-textarea:focus {
-            outline: none;
-            border-color: var(--border-focus);
-            box-shadow: 0 0 0 3px var(--accent-glow);
-            background: var(--bg-secondary);
-        }
-
-        /* Buttons */
-        .btn {
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            font-family: inherit;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            color: white;
-            box-shadow: 0 4px 16px var(--accent-glow);
-        }
-
-        .btn-primary:active {
-            transform: scale(0.97);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .btn-secondary {
-            background: var(--bg-card);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-        }
-
-        .btn-secondary:active {
-            transform: scale(0.97);
-            background: var(--bg-input);
-        }
-
-        .btn-ghost {
-            background: transparent;
-            color: var(--text-secondary);
-            padding: 8px;
-        }
-
-        .btn-icon {
-            font-size: 18px;
-        }
-
-        /* Loading spinner */
-        .spinner {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Cards */
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 16px;
-            transition: all 0.3s ease;
-        }
-
-        .card:active {
-            transform: scale(0.98);
-        }
-
-        .card-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
-        }
-
-        .card-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .card-badge {
-            font-size: 11px;
-            font-family: 'JetBrains Mono', monospace;
-            padding: 4px 10px;
-            background: var(--accent-glow);
-            color: var(--accent-primary);
-            border-radius: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .card-meta {
-            font-size: 13px;
-            color: var(--text-tertiary);
-            margin-top: 8px;
-        }
-
-        /* Project list */
-        .project-item {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 12px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .project-item:active {
-            transform: scale(0.98);
-            background: var(--bg-input);
-        }
-
-        .project-name {
-            font-size: 17px;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-
-        .project-desc {
-            font-size: 14px;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-
-        .project-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 12px;
-            font-family: 'JetBrains Mono', monospace;
-            padding: 4px 8px;
-            border-radius: 6px;
-            background: var(--bg-input);
-        }
-
-        .status-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--success);
-        }
-
-        /* Refined prompt display */
-        .refined-section {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-left: 3px solid var(--accent-primary);
-            border-radius: 12px;
-            padding: 16px;
-            margin-top: 16px;
-            animation: slideIn 0.4s ease-out;
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(-10px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-
-        .refined-label {
-            font-size: 12px;
-            color: var(--accent-primary);
-            font-family: 'JetBrains Mono', monospace;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 8px;
-        }
-
-        .refined-content {
-            font-size: 14px;
-            line-height: 1.6;
-            color: var(--text-primary);
-        }
-
-        .feature-list {
-            list-style: none;
-            margin: 8px 0;
-        }
-
-        .feature-list li {
-            padding: 4px 0 4px 20px;
-            position: relative;
-        }
-
-        .feature-list li:before {
-            content: "→";
-            position: absolute;
-            left: 0;
-            color: var(--accent-primary);
-        }
-
-        /* Progress bar */
-        .progress-container {
-            margin-top: 16px;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background: var(--bg-secondary);
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-
-        .progress-text {
-            font-size: 13px;
-            color: var(--text-secondary);
-            margin-top: 8px;
-            text-align: center;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        /* Bottom navigation */
-        .bottom-nav {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--bg-card);
-            border-top: 1px solid var(--border);
-            padding: 8px 12px calc(8px + var(--safe-area-bottom));
-            display: flex;
-            justify-content: space-around;
-            z-index: 100;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-        }
-
-        .nav-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-            padding: 8px 16px;
-            color: var(--text-tertiary);
-            font-size: 11px;
-            font-family: 'JetBrains Mono', monospace;
-            text-decoration: none;
-            transition: all 0.2s ease;
-            border-radius: 12px;
-            cursor: pointer;
-        }
-
-        .nav-item.active {
-            color: var(--accent-primary);
-            background: var(--accent-glow);
-        }
-
-        .nav-icon {
-            font-size: 22px;
-        }
-
-        /* Toast notifications */
-        .toast {
-            position: fixed;
-            top: calc(24px + var(--safe-area-top));
-            left: 20px;
-            right: 20px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-            transform: translateY(-120px);
-            opacity: 0;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            z-index: 1000;
-        }
-
-        .toast.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
-
-        .toast-icon {
-            font-size: 20px;
-        }
-
-        .toast-message {
-            flex: 1;
-            font-size: 14px;
-            color: var(--text-primary);
-        }
-
-        .toast.success { border-left: 3px solid var(--success); }
-        .toast.error { border-left: 3px solid var(--error); }
-        .toast.warning { border-left: 3px solid var(--warning); }
-
-        /* Workflow steps */
-        .steps {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 24px;
-            padding: 16px;
-            background: var(--bg-card);
-            border-radius: 12px;
-        }
-
-        .step {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            flex: 1;
-            position: relative;
-        }
-
-        .step:not(:last-child):after {
-            content: "";
-            position: absolute;
-            top: 16px;
-            left: calc(50% + 20px);
-            width: calc(100% - 40px);
-            height: 2px;
-            background: var(--border);
-        }
-
-        .step-number {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: var(--bg-input);
-            border: 2px solid var(--border);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            font-weight: 600;
-            position: relative;
-            z-index: 1;
-        }
-
-        .step.active .step-number {
-            background: var(--accent-primary);
-            border-color: var(--accent-primary);
-            color: white;
-        }
-
-        .step.completed .step-number {
-            background: var(--success);
-            border-color: var(--success);
-            color: white;
-        }
-
-        .step-label {
-            font-size: 11px;
-            color: var(--text-tertiary);
-            text-align: center;
-        }
-
-        .step.active .step-label {
-            color: var(--accent-primary);
-        }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-        }
-
-        .empty-icon {
-            font-size: 64px;
-            margin-bottom: 16px;
-            opacity: 0.3;
-        }
-
-        .empty-title {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .empty-text {
-            font-size: 14px;
-            color: var(--text-secondary);
-        }
-
-        /* Link styles */
-        .link {
-            color: var(--accent-primary);
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .link:hover {
-            text-decoration: underline;
-        }
-
-        /* Utility classes */
-        .hidden { display: none !important; }
-        .mt-8 { margin-top: 8px; }
-        .mt-16 { margin-top: 16px; }
-        .mt-24 { margin-top: 24px; }
-        .mb-8 { margin-bottom: 8px; }
-        .mb-16 { margin-bottom: 16px; }
-        .text-center { text-align: center; }
-
-        /* Responsive */
-        @media (max-width: 390px) {
-            .container { padding: 0 16px 100px; }
-            .card { padding: 16px; }
-            .logo { font-size: 24px; }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Agentic System Builder</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-    <!-- Background -->
-    <div class="bg-gradient"></div>
+  <div class="app" id="app">
 
-    <!-- Toast notification -->
-    <div class="toast" id="toast">
-        <div class="toast-icon" id="toastIcon">✓</div>
-        <div class="toast-message" id="toastMessage"></div>
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="screen active">
+      <div class="auth-container">
+        <div class="logo">
+          <span class="logo-icon">⚡</span>
+          <h1>Agentic System Builder</h1>
+          <p class="subtitle">AI-powered autonomous code generation</p>
+        </div>
+
+        <div id="login-form" class="auth-form">
+          <h2>Sign In</h2>
+          <label for="login-email">Email</label>
+          <input id="login-email" type="email" placeholder="you@example.com" autocomplete="email">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" placeholder="Min. 8 characters" autocomplete="current-password">
+          <button class="btn-primary" onclick="handleLogin()">Sign In</button>
+          <p class="auth-toggle">No account? <a href="#" onclick="showRegister()">Create one</a></p>
+        </div>
+
+        <div id="register-form" class="auth-form hidden">
+          <h2>Create Account</h2>
+          <label for="reg-name">Full Name</label>
+          <input id="reg-name" type="text" placeholder="John Doe">
+          <label for="reg-email">Email</label>
+          <input id="reg-email" type="email" placeholder="you@example.com" autocomplete="email">
+          <label for="reg-password">Password</label>
+          <input id="reg-password" type="password" placeholder="Min. 8 characters" autocomplete="new-password">
+          <button class="btn-primary" onclick="handleRegister()">Create Account</button>
+          <p class="auth-toggle">Have an account? <a href="#" onclick="showLogin()">Sign in</a></p>
+        </div>
+
+        <p class="credit">Made by <strong>John Rish Ladica</strong><br>Student Leader, SLSU-HC &mdash; SITS</p>
+      </div>
     </div>
 
-    <div class="container">
-        <!-- AUTH PAGE -->
-        <div id="authPage" class="page active">
-            <div class="auth-container">
-                <div class="header">
-                    <div class="logo">Agentic Builder</div>
-                    <div class="tagline">AI-Powered System Generation</div>
-                </div>
-
-                <!-- Login Form -->
-                <div id="loginForm">
-                    <h1 class="auth-title">Welcome Back</h1>
-                    <p class="auth-subtitle">Sign in to continue building</p>
-
-                    <form id="loginFormEl" onsubmit="handleLogin(event)">
-                        <div class="form-group">
-                            <label class="form-label">Email</label>
-                            <input type="email" class="form-input" id="loginEmail" required 
-                                   placeholder="you@example.com">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Password</label>
-                            <input type="password" class="form-input" id="loginPassword" required 
-                                   placeholder="Enter your password">
-                        </div>
-                        <button type="submit" class="btn btn-primary" id="loginBtn">
-                            <span id="loginBtnText">Sign In</span>
-                        </button>
-                    </form>
-
-                    <p class="text-center mt-24">
-                        Don't have an account? 
-                        <a class="link" onclick="showRegister()">Create one</a>
-                    </p>
-                </div>
-
-                <!-- Register Form -->
-                <div id="registerForm" class="hidden">
-                    <h1 class="auth-title">Create Account</h1>
-                    <p class="auth-subtitle">Start building AI systems today</p>
-
-                    <form id="registerFormEl" onsubmit="handleRegister(event)">
-                        <div class="form-group">
-                            <label class="form-label">Full Name</label>
-                            <input type="text" class="form-input" id="registerName" required 
-                                   placeholder="John Doe">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Email</label>
-                            <input type="email" class="form-input" id="registerEmail" required 
-                                   placeholder="you@example.com">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Password</label>
-                            <input type="password" class="form-input" id="registerPassword" required 
-                                   placeholder="Minimum 8 characters">
-                        </div>
-                        <button type="submit" class="btn btn-primary" id="registerBtn">
-                            <span id="registerBtnText">Create Account</span>
-                        </button>
-                    </form>
-
-                    <p class="text-center mt-24">
-                        Already have an account? 
-                        <a class="link" onclick="showLogin()">Sign in</a>
-                    </p>
-                </div>
-            </div>
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="screen">
+      <header>
+        <div class="header-left">
+          <span class="logo-icon-sm">⚡</span>
+          <h1>Dashboard</h1>
         </div>
-
-        <!-- PROJECTS PAGE -->
-        <div id="projectsPage" class="page">
-            <div class="header">
-                <div class="logo">My Projects</div>
-                <div class="tagline" id="userEmail"></div>
-            </div>
-
-            <button class="btn btn-primary mb-16" onclick="showNewProject()">
-                <span class="btn-icon">+</span>
-                New Project
-            </button>
-
-            <div id="projectsList"></div>
-
-            <div id="emptyProjects" class="empty-state hidden">
-                <div class="empty-icon">📦</div>
-                <div class="empty-title">No Projects Yet</div>
-                <div class="empty-text">Create your first AI-generated system</div>
-            </div>
+        <div class="header-right">
+          <span id="user-name" class="user-badge"></span>
+          <button class="btn-ghost" onclick="handleLogout()">Sign Out</button>
         </div>
+      </header>
 
-        <!-- BUILD PAGE -->
-        <div id="buildPage" class="page">
-            <div class="header">
-                <div class="logo">Build System</div>
-                <div class="tagline">Autonomous AI Generation</div>
+      <main>
+        <!-- New Project -->
+        <section class="card">
+          <h2>New Project</h2>
+          <p class="hint">Describe the system you want to build and let AI do the rest.</p>
+          <label for="proj-name">Project Name</label>
+          <input id="proj-name" type="text" placeholder="My Awesome App">
+          <label for="proj-goal">Goal</label>
+          <textarea id="proj-goal" rows="3" placeholder="Build a task management system with real-time collaboration …"></textarea>
+          <label for="proj-audience">Target Audience <span class="optional">(optional)</span></label>
+          <input id="proj-audience" type="text" placeholder="Small teams, freelancers">
+          <button class="btn-primary" onclick="createProject()">Create Project</button>
+        </section>
+
+        <!-- Projects List -->
+        <section class="card">
+          <div class="card-header">
+            <h2>My Projects</h2>
+            <button class="btn-ghost" onclick="loadProjects()">Refresh</button>
+          </div>
+          <div id="projects-list" class="list"></div>
+        </section>
+
+        <!-- Generation Pipeline -->
+        <section id="pipeline-section" class="card hidden">
+          <h2>Generation Pipeline</h2>
+          <p id="pipeline-project-name" class="hint"></p>
+
+          <div class="pipeline-steps">
+            <div class="step" id="step-refine">
+              <span class="step-number">1</span>
+              <div class="step-content">
+                <h3>Refine Prompt</h3>
+                <p>AI refines your goal into a detailed specification.</p>
+                <button class="btn-secondary" onclick="runRefine()">Refine</button>
+              </div>
+              <span class="step-status" id="status-refine"></span>
             </div>
 
-            <!-- Workflow steps -->
-            <div class="steps">
-                <div class="step active" id="step1">
-                    <div class="step-number">1</div>
-                    <div class="step-label">Describe</div>
-                </div>
-                <div class="step" id="step2">
-                    <div class="step-number">2</div>
-                    <div class="step-label">Refine</div>
-                </div>
-                <div class="step" id="step3">
-                    <div class="step-number">3</div>
-                    <div class="step-label">Generate</div>
-                </div>
+            <div class="step" id="step-plan">
+              <span class="step-number">2</span>
+              <div class="step-content">
+                <h3>Generate Plan</h3>
+                <p>Create an architecture and implementation plan.</p>
+                <button class="btn-secondary" onclick="runPlan()">Plan</button>
+              </div>
+              <span class="step-status" id="status-plan"></span>
             </div>
 
-            <!-- Step 1: Describe -->
-            <div id="describeStep">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">Describe Your System</h2>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Project Name</label>
-                        <input type="text" class="form-input" id="projectName" 
-                               placeholder="My Awesome App">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">What do you want to build?</label>
-                        <textarea class="form-textarea" id="projectGoal" 
-                                  placeholder="Describe your system in detail. What problem does it solve? Who will use it? What features should it have?"></textarea>
-                    </div>
-
-                    <button class="btn btn-primary" onclick="refinePrompt()">
-                        <span class="btn-icon">✨</span>
-                        <span id="refineBtnText">Refine & Plan</span>
-                    </button>
-                </div>
+            <div class="step" id="step-generate">
+              <span class="step-number">3</span>
+              <div class="step-content">
+                <h3>Generate System</h3>
+                <p>Build, review, and refactor the complete system.</p>
+                <button class="btn-secondary" onclick="runGenerate()">Generate</button>
+              </div>
+              <span class="step-status" id="status-generate"></span>
             </div>
 
-            <!-- Step 2: Refined Specification -->
-            <div id="refineStep" class="hidden">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">Refined Specification</h2>
-                        <button class="btn-ghost" onclick="backToDescribe()">Edit</button>
-                    </div>
-
-                    <div id="refinedDisplay"></div>
-
-                    <button class="btn btn-primary mt-16" onclick="generatePlan()">
-                        <span class="btn-icon">📋</span>
-                        <span id="planBtnText">Create Implementation Plan</span>
-                    </button>
-                </div>
+            <div class="step" id="step-export">
+              <span class="step-number">4</span>
+              <div class="step-content">
+                <h3>Export ZIP</h3>
+                <p>Download the ready-to-deploy project archive.</p>
+                <button class="btn-secondary" onclick="runExport()">Download</button>
+              </div>
+              <span class="step-status" id="status-export"></span>
             </div>
+          </div>
 
-            <!-- Step 3: Generate -->
-            <div id="generateStep" class="hidden">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">Implementation Plan</h2>
-                    </div>
+          <div id="pipeline-output" class="output hidden">
+            <h3>Output</h3>
+            <pre id="pipeline-pre"></pre>
+          </div>
+        </section>
+      </main>
 
-                    <div id="planDisplay"></div>
-
-                    <button class="btn btn-primary mt-16" onclick="generateSystem()">
-                        <span class="btn-icon">🚀</span>
-                        <span id="generateBtnText">Generate Complete System</span>
-                    </button>
-
-                    <div id="generationProgress" class="progress-container hidden">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="progressFill"></div>
-                        </div>
-                        <div class="progress-text" id="progressText">Initializing...</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Results -->
-            <div id="resultsStep" class="hidden">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">System Generated!</h2>
-                        <span class="card-badge">Complete</span>
-                    </div>
-
-                    <div id="resultsDisplay"></div>
-
-                    <button class="btn btn-primary mt-16" onclick="downloadProject()">
-                        <span class="btn-icon">⬇️</span>
-                        Download ZIP
-                    </button>
-
-                    <button class="btn btn-secondary mt-8" onclick="startNewProject()">
-                        <span class="btn-icon">+</span>
-                        New Project
-                    </button>
-                </div>
-            </div>
-        </div>
+      <footer>
+        <p>Agentic System Builder v3.0 &mdash; Made by <strong>John Rish Ladica</strong>, Student Leader at SLSU-HC &mdash; Society of Information Technology Students (SITS)</p>
+      </footer>
     </div>
+  </div>
 
-    <!-- Bottom Navigation -->
-    <div class="bottom-nav">
-        <div class="nav-item" onclick="showPage('projects')">
-            <div class="nav-icon">📚</div>
-            <div>Projects</div>
-        </div>
-        <div class="nav-item active" onclick="showPage('build')">
-            <div class="nav-icon">⚡</div>
-            <div>Build</div>
-        </div>
-        <div class="nav-item" onclick="handleLogout()">
-            <div class="nav-icon">🚪</div>
-            <div>Logout</div>
-        </div>
-    </div>
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
 
-    <script>
-        // API Configuration
-        const API_BASE = window.location.hostname === 'localhost' 
-            ? 'http://localhost:5000' 
-            : '';  // Use same origin in production
-
-        // State management
-        let currentUser = null;
-        let currentProject = {
-            id: null,
-            refined: null,
-            plan: null
-        };
-
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            const token = localStorage.getItem('token');
-            if (token) {
-                verifyToken(token);
-            }
-        });
-
-        // Toast notifications
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast');
-            const icon = document.getElementById('toastIcon');
-            const msg = document.getElementById('toastMessage');
-
-            const icons = {
-                success: '✓',
-                error: '✕',
-                warning: '⚠',
-                info: 'ℹ'
-            };
-
-            toast.className = `toast ${type}`;
-            icon.textContent = icons[type] || icons.info;
-            msg.textContent = message;
-
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
-        }
-
-        // API calls
-        async function apiCall(endpoint, options = {}) {
-            const token = localStorage.getItem('token');
-            const headers = {
-                'Content-Type': 'application/json',
-                ...options.headers
-            };
-
-            if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}${endpoint}`, {
-                    ...options,
-                    headers
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Request failed');
-                }
-
-                return data;
-            } catch (error) {
-                console.error('API Error:', error);
-                throw error;
-            }
-        }
-
-        // Authentication
-        async function handleLogin(event) {
-            event.preventDefault();
-            const btn = document.getElementById('loginBtn');
-            const btnText = document.getElementById('loginBtnText');
-
-            try {
-                btn.disabled = true;
-                btnText.innerHTML = '<div class="spinner"></div>';
-
-                const email = document.getElementById('loginEmail').value;
-                const password = document.getElementById('loginPassword').value;
-
-                const data = await apiCall('/api/auth/login', {
-                    method: 'POST',
-                    body: JSON.stringify({ email, password })
-                });
-
-                localStorage.setItem('token', data.token);
-                currentUser = data.user;
-
-                showToast('Welcome back!', 'success');
-                showMainApp();
-            } catch (error) {
-                showToast(error.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btnText.textContent = 'Sign In';
-            }
-        }
-
-        async function handleRegister(event) {
-            event.preventDefault();
-            const btn = document.getElementById('registerBtn');
-            const btnText = document.getElementById('registerBtnText');
-
-            try {
-                btn.disabled = true;
-                btnText.innerHTML = '<div class="spinner"></div>';
-
-                const email = document.getElementById('registerEmail').value;
-                const password = document.getElementById('registerPassword').value;
-                const full_name = document.getElementById('registerName').value;
-
-                const data = await apiCall('/api/auth/register', {
-                    method: 'POST',
-                    body: JSON.stringify({ email, password, full_name })
-                });
-
-                localStorage.setItem('token', data.token);
-                currentUser = data.user;
-
-                showToast('Account created successfully!', 'success');
-                showMainApp();
-            } catch (error) {
-                showToast(error.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btnText.textContent = 'Create Account';
-            }
-        }
-
-        async function verifyToken(token) {
-            try {
-                const data = await apiCall('/api/auth/me');
-                currentUser = data;
-                showMainApp();
-            } catch (error) {
-                localStorage.removeItem('token');
-                showPage('auth');
-            }
-        }
-
-        function handleLogout() {
-            if (confirm('Are you sure you want to logout?')) {
-                localStorage.removeItem('token');
-                currentUser = null;
-                currentProject = { id: null, refined: null, plan: null };
-                location.reload();
-            }
-        }
-
-        // UI Navigation
-        function showLogin() {
-            document.getElementById('loginForm').classList.remove('hidden');
-            document.getElementById('registerForm').classList.add('hidden');
-        }
-
-        function showRegister() {
-            document.getElementById('loginForm').classList.add('hidden');
-            document.getElementById('registerForm').classList.remove('hidden');
-        }
-
-        function showMainApp() {
-            document.getElementById('authPage').classList.remove('active');
-            document.getElementById('buildPage').classList.add('active');
-            document.getElementById('userEmail').textContent = currentUser.email;
-            loadProjects();
-        }
-
-        function showPage(pageName) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-
-            if (pageName === 'projects') {
-                document.getElementById('projectsPage').classList.add('active');
-                document.querySelectorAll('.nav-item')[0].classList.add('active');
-                loadProjects();
-            } else if (pageName === 'build') {
-                document.getElementById('buildPage').classList.add('active');
-                document.querySelectorAll('.nav-item')[1].classList.add('active');
-            }
-        }
-
-        // Projects
-        async function loadProjects() {
-            try {
-                const data = await apiCall('/api/projects');
-                const list = document.getElementById('projectsList');
-                const empty = document.getElementById('emptyProjects');
-
-                if (data.projects.length === 0) {
-                    list.innerHTML = '';
-                    empty.classList.remove('hidden');
-                } else {
-                    empty.classList.add('hidden');
-                    list.innerHTML = data.projects.map(p => `
-                        <div class="project-item" onclick="openProject(${p.id})">
-                            <div class="project-name">${p.name}</div>
-                            <div class="project-desc">${p.description || p.goal.substring(0, 100)}...</div>
-                            <div class="project-status">
-                                <span class="status-dot"></span>
-                                ${p.status}
-                            </div>
-                        </div>
-                    `).join('');
-                }
-            } catch (error) {
-                showToast('Failed to load projects', 'error');
-            }
-        }
-
-        function showNewProject() {
-            showPage('build');
-            startNewProject();
-        }
-
-        function startNewProject() {
-            currentProject = { id: null, refined: null, plan: null };
-            document.getElementById('projectName').value = '';
-            document.getElementById('projectGoal').value = '';
-            
-            // Reset workflow
-            document.getElementById('describeStep').classList.remove('hidden');
-            document.getElementById('refineStep').classList.add('hidden');
-            document.getElementById('generateStep').classList.add('hidden');
-            document.getElementById('resultsStep').classList.add('hidden');
-            
-            updateSteps(1);
-        }
-
-        // Workflow steps
-        function updateSteps(activeStep) {
-            for (let i = 1; i <= 3; i++) {
-                const step = document.getElementById(`step${i}`);
-                step.classList.remove('active', 'completed');
-                
-                if (i < activeStep) {
-                    step.classList.add('completed');
-                } else if (i === activeStep) {
-                    step.classList.add('active');
-                }
-            }
-        }
-
-        function backToDescribe() {
-            document.getElementById('describeStep').classList.remove('hidden');
-            document.getElementById('refineStep').classList.add('hidden');
-            updateSteps(1);
-        }
-
-        // Agentic workflow
-        async function refinePrompt() {
-            const name = document.getElementById('projectName').value.trim();
-            const goal = document.getElementById('projectGoal').value.trim();
-
-            if (!name || !goal) {
-                showToast('Please fill in all fields', 'warning');
-                return;
-            }
-
-            const btnText = document.getElementById('refineBtnText');
-            const btn = event.target;
-
-            try {
-                btn.disabled = true;
-                btnText.innerHTML = '<div class="spinner"></div>';
-
-                // Create project
-                const projectData = await apiCall('/api/projects', {
-                    method: 'POST',
-                    body: JSON.stringify({ name, goal, description: goal.substring(0, 200) })
-                });
-
-                currentProject.id = projectData.id;
-
-                // Refine prompt
-                const refinedData = await apiCall('/api/refine-prompt', {
-                    method: 'POST',
-                    body: JSON.stringify({ 
-                        prompt: goal,
-                        project_id: currentProject.id
-                    })
-                });
-
-                currentProject.refined = refinedData.refined;
-
-                // Display refined spec
-                const display = document.getElementById('refinedDisplay');
-                display.innerHTML = `
-                    <div class="refined-section">
-                        <div class="refined-label">Goal</div>
-                        <div class="refined-content">${refinedData.refined.goal || goal}</div>
-                    </div>
-                    ${refinedData.refined.features && refinedData.refined.features.length > 0 ? `
-                    <div class="refined-section">
-                        <div class="refined-label">Core Features</div>
-                        <ul class="feature-list">
-                            ${refinedData.refined.features.map(f => `<li>${f}</li>`).join('')}
-                        </ul>
-                    </div>
-                    ` : ''}
-                `;
-
-                // Move to next step
-                document.getElementById('describeStep').classList.add('hidden');
-                document.getElementById('refineStep').classList.remove('hidden');
-                updateSteps(2);
-
-                showToast('Prompt refined successfully!', 'success');
-            } catch (error) {
-                showToast(error.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btnText.innerHTML = '<span class="btn-icon">✨</span> Refine & Plan';
-            }
-        }
-
-        async function generatePlan() {
-            const btnText = document.getElementById('planBtnText');
-            const btn = event.target;
-
-            try {
-                btn.disabled = true;
-                btnText.innerHTML = '<div class="spinner"></div>';
-
-                const planData = await apiCall('/api/generate-plan', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        refined_spec: currentProject.refined,
-                        project_id: currentProject.id
-                    })
-                });
-
-                currentProject.plan = planData.plan;
-
-                // Display plan
-                const display = document.getElementById('planDisplay');
-                display.innerHTML = `
-                    <div class="refined-section">
-                        <div class="refined-label">Architecture</div>
-                        <div class="refined-content">${planData.plan.architecture || 'Modern web application'}</div>
-                    </div>
-                    ${planData.plan.implementation_steps && planData.plan.implementation_steps.length > 0 ? `
-                    <div class="refined-section">
-                        <div class="refined-label">Implementation Steps</div>
-                        <ul class="feature-list">
-                            ${planData.plan.implementation_steps.slice(0, 5).map(s => `<li>${s}</li>`).join('')}
-                        </ul>
-                    </div>
-                    ` : ''}
-                `;
-
-                // Move to next step
-                document.getElementById('refineStep').classList.add('hidden');
-                document.getElementById('generateStep').classList.remove('hidden');
-                updateSteps(3);
-
-                showToast('Plan created successfully!', 'success');
-            } catch (error) {
-                showToast(error.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btnText.innerHTML = '<span class="btn-icon">📋</span> Create Implementation Plan';
-            }
-        }
-
-        async function generateSystem() {
-            const btnText = document.getElementById('generateBtnText');
-            const btn = event.target;
-            const progress = document.getElementById('generationProgress');
-            const progressFill = document.getElementById('progressFill');
-            const progressText = document.getElementById('progressText');
-
-            try {
-                btn.disabled = true;
-                btnText.innerHTML = '<div class="spinner"></div>';
-                progress.classList.remove('hidden');
-
-                // Simulate progress
-                let currentProgress = 0;
-                const progressInterval = setInterval(() => {
-                    currentProgress += Math.random() * 10;
-                    if (currentProgress > 90) currentProgress = 90;
-                    progressFill.style.width = currentProgress + '%';
-                    
-                    const stages = [
-                        'Generating backend code...',
-                        'Creating frontend interface...',
-                        'Reviewing code quality...',
-                        'Applying optimizations...'
-                    ];
-                    progressText.textContent = stages[Math.floor(currentProgress / 25)] || 'Finalizing...';
-                }, 800);
-
-                const systemData = await apiCall('/api/generate-system', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        plan: currentProject.plan,
-                        refined_spec: currentProject.refined,
-                        project_id: currentProject.id
-                    })
-                });
-
-                clearInterval(progressInterval);
-                progressFill.style.width = '100%';
-                progressText.textContent = 'Complete!';
-
-                // Display results
-                const display = document.getElementById('resultsDisplay');
-                display.innerHTML = `
-                    <div class="refined-section">
-                        <div class="refined-label">Generated Files</div>
-                        <ul class="feature-list">
-                            ${Object.keys(systemData.files).map(f => `<li>${f}</li>`).join('')}
-                        </ul>
-                    </div>
-                    <div class="refined-section">
-                        <div class="refined-label">Code Review Score</div>
-                        <div class="refined-content">${systemData.review.overall_score}/100</div>
-                    </div>
-                    ${systemData.review.recommendations && systemData.review.recommendations.length > 0 ? `
-                    <div class="refined-section">
-                        <div class="refined-label">Recommendations</div>
-                        <ul class="feature-list">
-                            ${systemData.review.recommendations.slice(0, 3).map(r => `<li>${r}</li>`).join('')}
-                        </ul>
-                    </div>
-                    ` : ''}
-                `;
-
-                // Show results
-                document.getElementById('generateStep').classList.add('hidden');
-                document.getElementById('resultsStep').classList.remove('hidden');
-
-                showToast('System generated successfully!', 'success');
-            } catch (error) {
-                showToast(error.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btnText.innerHTML = '<span class="btn-icon">🚀</span> Generate Complete System';
-            }
-        }
-
-        async function downloadProject() {
-            if (!currentProject.id) {
-                showToast('No project to download', 'error');
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}/api/projects/${currentProject.id}/export`, {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Download failed');
-                }
-
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `project_${currentProject.id}.zip`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-
-                showToast('Project downloaded!', 'success');
-            } catch (error) {
-                showToast('Download failed', 'error');
-            }
-        }
-
-        // Auto-save functionality
-        let saveTimeout;
-        document.getElementById('projectGoal')?.addEventListener('input', () => {
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => {
-                const goal = document.getElementById('projectGoal').value;
-                localStorage.setItem('draft_goal', goal);
-            }, 1000);
-        });
-
-        // Restore draft
-        const draftGoal = localStorage.getItem('draft_goal');
-        if (draftGoal && document.getElementById('projectGoal')) {
-            document.getElementById('projectGoal').value = draftGoal;
-        }
-    </script>
+  <script src="/static/js/app.js"></script>
 </body>
 </html>
