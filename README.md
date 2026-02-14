@@ -67,14 +67,16 @@ python app.py
 
 Visit **http://localhost:5000**
 
-### 4. Deploy to Vercel
+### 4. Deploy to Production
 
-```bash
-npm i -g vercel
-vercel --prod
-```
-
-Add `GEMINI_KEY` and `JWT_SECRET` as environment variables in your Vercel dashboard.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment instructions covering:
+- Vercel (recommended)
+- Railway
+- Docker
+- Security checklist
+- Database setup with Supabase
+- Environment configuration
+- Monitoring and troubleshooting
 
 ## Project Structure
 
@@ -95,6 +97,16 @@ Add `GEMINI_KEY` and `JWT_SECRET` as environment variables in your Vercel dashbo
 ```
 
 ## API Reference
+
+See [API.md](API.md) for complete API documentation including:
+- Authentication endpoints (register, login, password reset)
+- Project management (CRUD operations)
+- Collaboration features (add/remove collaborators)
+- Generation pipeline (refine, plan, generate)
+- Rate limits and error handling
+- Request/response examples
+
+Quick reference:
 
 ### Authentication
 

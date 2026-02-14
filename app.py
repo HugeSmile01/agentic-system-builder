@@ -11,6 +11,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import zipfile
@@ -39,23 +40,91 @@ from lib.agents import (
 )
 
 # ---------------------------------------------------------------------------
+# Environment validation
+# ---------------------------------------------------------------------------
+
+# Validate required environment variables at startup
+if not GEMINI_KEY:
+    logging.error("FATAL: GEMINI_KEY environment variable is required")
+    raise RuntimeError("GEMINI_KEY environment variable must be set")
+
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET or len(JWT_SECRET) < 32:
+    logging.error("FATAL: JWT_SECRET must be at least 32 characters")
+    raise RuntimeError("JWT_SECRET environment variable must be at least 32 characters")
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY or len(SECRET_KEY) < 32:
+    logging.error("FATAL: SECRET_KEY must be at least 32 characters")
+    raise RuntimeError("SECRET_KEY environment variable must be at least 32 characters")
+
+# ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
 
-API_VERSION = "3.1.0"
+API_VERSION = "3.1.1"
 
 app = Flask(__name__, static_folder="static")
 app.config.update(
     JSON_SORT_KEYS=False,
     JSONIFY_PRETTYPRINT_REGULAR=False,
-    SECRET_KEY=os.getenv("SECRET_KEY", secrets.token_hex(32)),
+    SECRET_KEY=SECRET_KEY,
 )
 
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Configure CORS with restricted origins (production should use specific domains)
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+if "*" in ALLOWED_ORIGINS:
+    logging.warning("WARNING: CORS is configured to allow all origins. Set ALLOWED_ORIGINS in production.")
+CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
+
 limiter = Limiter(app=app, key_func=get_remote_address, default_limits=["200 per hour"])
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'"
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Input validation helpers
+# ---------------------------------------------------------------------------
+
+def validate_email(email):
+    """Validate email format (RFC 5322 compliant)."""
+    if not email or len(email) > 255:
+        return False
+    # More comprehensive email validation pattern
+    pattern = r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
+    return re.match(pattern, email) is not None
+
+def sanitize_text_input(text, max_length=10000):
+    """Sanitize and limit text input."""
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) > max_length:
+        raise ApiError(f"Input exceeds maximum length of {max_length} characters", 400)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -73,9 +142,9 @@ def handle_api_error(error):
 @app.errorhandler(Exception)
 def handle_unexpected_error(error):
     logger.exception("Unexpected error")
+    # Don't leak internal error details to clients
     return jsonify({
         "error": "Internal server error",
-        "detail": str(error),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }), 500
 
@@ -88,14 +157,18 @@ def handle_unexpected_error(error):
 @limiter.limit("5 per hour")
 def register():
     data = request.get_json() or {}
-    email = data.get("email", "").strip().lower()
+    email = sanitize_text_input(data.get("email", ""), max_length=255).lower()
     password = data.get("password", "").strip()
-    full_name = data.get("full_name", "").strip()
+    full_name = sanitize_text_input(data.get("full_name", ""), max_length=255)
 
     if not email or not password:
         raise ApiError("Email and password are required")
+    if not validate_email(email):
+        raise ApiError("Invalid email format")
     if len(password) < 8:
         raise ApiError("Password must be at least 8 characters")
+    if len(password) > 128:
+        raise ApiError("Password is too long (max 128 characters)")
 
     conn = get_sqlite_connection()
     try:
@@ -109,6 +182,7 @@ def register():
         )
         conn.commit()
         user_id = cursor.lastrowid
+        logger.info(f"New user registered: {email}")
         return jsonify({"token": generate_token(user_id, email), "user": {"id": user_id, "email": email, "full_name": full_name}})
     finally:
         conn.close()
@@ -118,11 +192,13 @@ def register():
 @limiter.limit("10 per hour")
 def login():
     data = request.get_json() or {}
-    email = data.get("email", "").strip().lower()
+    email = sanitize_text_input(data.get("email", ""), max_length=255).lower()
     password = data.get("password", "").strip()
 
     if not email or not password:
         raise ApiError("Email and password are required")
+    if not validate_email(email):
+        raise ApiError("Invalid email format")
 
     conn = get_sqlite_connection()
     try:
@@ -136,6 +212,7 @@ def login():
 
         conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", (user["id"],))
         conn.commit()
+        logger.info(f"User logged in: {email}")
         return jsonify({"token": generate_token(user["id"], user["email"]), "user": {"id": user["id"], "email": user["email"], "full_name": user["full_name"]}})
     finally:
         conn.close()
@@ -162,7 +239,7 @@ def get_current_user():
 def update_profile():
     """Update user profile information."""
     data = request.get_json() or {}
-    full_name = data.get("full_name", "").strip()
+    full_name = sanitize_text_input(data.get("full_name", ""), max_length=255)
     
     if not full_name:
         raise ApiError("Full name is required")
@@ -174,6 +251,7 @@ def update_profile():
             (full_name, request.user_id),
         )
         conn.commit()
+        logger.info(f"User {request.user_id} updated profile")
         return jsonify({"message": "Profile updated successfully", "full_name": full_name})
     finally:
         conn.close()
@@ -282,6 +360,45 @@ def reset_password():
 
 
 # ---------------------------------------------------------------------------
+# Authorization helpers
+# ---------------------------------------------------------------------------
+
+def check_project_access(conn, project_id, user_id, required_role=None):
+    """
+    Check if user has access to a project.
+    Returns (has_access, is_owner, user_role)
+    """
+    # Check if user is owner
+    project = conn.execute(
+        "SELECT user_id FROM projects WHERE id = ?",
+        (project_id,)
+    ).fetchone()
+    
+    if not project:
+        return False, False, None
+    
+    if project["user_id"] == user_id:
+        return True, True, "owner"
+    
+    # Check if user is a collaborator
+    collaborator = conn.execute(
+        "SELECT role FROM project_collaborators WHERE project_id = ? AND user_id = ?",
+        (project_id, user_id)
+    ).fetchone()
+    
+    if not collaborator:
+        return False, False, None
+    
+    user_role = collaborator["role"]
+    
+    # Check role permission
+    if required_role == "editor" and user_role == "viewer":
+        return True, False, user_role  # Has access but not permission
+    
+    return True, False, user_role
+
+
+# ---------------------------------------------------------------------------
 # Project endpoints
 # ---------------------------------------------------------------------------
 
@@ -339,8 +456,12 @@ def list_projects():
 @require_auth
 def create_project():
     data = request.get_json() or {}
-    name = data.get("name", "").strip()
-    goal = data.get("goal", "").strip()
+    name = sanitize_text_input(data.get("name", ""), max_length=255)
+    goal = sanitize_text_input(data.get("goal", ""), max_length=5000)
+    description = sanitize_text_input(data.get("description", ""), max_length=1000)
+    audience = sanitize_text_input(data.get("audience", ""), max_length=500)
+    ui_style = sanitize_text_input(data.get("ui_style", ""), max_length=500)
+    constraints = sanitize_text_input(data.get("constraints", ""), max_length=1000)
 
     if not name or not goal:
         raise ApiError("Project name and goal are required")
@@ -349,9 +470,10 @@ def create_project():
     try:
         cursor = conn.execute(
             "INSERT INTO projects (user_id, name, description, goal, audience, ui_style, constraints, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')",
-            (request.user_id, name, data.get("description", "").strip(), goal, data.get("audience", ""), data.get("ui_style", ""), data.get("constraints", "")),
+            (request.user_id, name, description, goal, audience, ui_style, constraints),
         )
         conn.commit()
+        logger.info(f"User {request.user_id} created project: {name}")
         return jsonify({"id": cursor.lastrowid, "name": name, "status": "draft"})
     finally:
         conn.close()
@@ -362,13 +484,25 @@ def create_project():
 def get_project(project_id):
     conn = get_sqlite_connection()
     try:
-        project = conn.execute("SELECT * FROM projects WHERE id = ? AND user_id = ?", (project_id, request.user_id)).fetchone()
+        # Check access (owner or collaborator)
+        has_access, is_owner, role = check_project_access(conn, project_id, request.user_id)
+        if not has_access:
+            raise ApiError("Project not found", 404)
+        
+        # Optimized query: fetch project with related data
+        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
             raise ApiError("Project not found", 404)
 
         iterations = conn.execute("SELECT * FROM project_iterations WHERE project_id = ? ORDER BY iteration_number DESC", (project_id,)).fetchall()
         files = conn.execute("SELECT * FROM generated_files WHERE project_id = ?", (project_id,)).fetchall()
-        return jsonify({"project": dict(project), "iterations": [dict(i) for i in iterations], "files": [dict(f) for f in files]})
+        
+        return jsonify({
+            "project": dict(project),
+            "iterations": [dict(i) for i in iterations],
+            "files": [dict(f) for f in files],
+            "access": {"role": role, "is_owner": is_owner}
+        })
     finally:
         conn.close()
 
@@ -378,27 +512,27 @@ def get_project(project_id):
 def update_project(project_id):
     """Update project details."""
     data = request.get_json() or {}
-    name = data.get("name", "").strip()
-    description = data.get("description", "").strip()
+    name = sanitize_text_input(data.get("name", ""), max_length=255)
+    description = sanitize_text_input(data.get("description", ""), max_length=1000)
     
     if not name:
         raise ApiError("Project name is required")
     
     conn = get_sqlite_connection()
     try:
-        project = conn.execute(
-            "SELECT id FROM projects WHERE id = ? AND user_id = ?",
-            (project_id, request.user_id)
-        ).fetchone()
-        
-        if not project:
+        # Check access with editor permission required
+        has_access, is_owner, role = check_project_access(conn, project_id, request.user_id, required_role="editor")
+        if not has_access:
             raise ApiError("Project not found", 404)
+        if role == "viewer":
+            raise ApiError("Insufficient permissions. Editor role required.", 403)
         
         conn.execute(
             "UPDATE projects SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (name, description, project_id)
         )
         conn.commit()
+        logger.info(f"User {request.user_id} updated project {project_id}")
         return jsonify({"message": "Project updated successfully", "id": project_id})
     finally:
         conn.close()
@@ -407,24 +541,26 @@ def update_project(project_id):
 @app.route("/api/projects/<int:project_id>", methods=["DELETE"])
 @require_auth
 def delete_project(project_id):
-    """Delete a project and all associated data."""
+    """Delete a project and all associated data (owner only)."""
     conn = get_sqlite_connection()
     try:
+        # Only owner can delete
         project = conn.execute(
             "SELECT id FROM projects WHERE id = ? AND user_id = ?",
             (project_id, request.user_id)
         ).fetchone()
         
         if not project:
-            raise ApiError("Project not found", 404)
+            raise ApiError("Project not found or insufficient permissions", 404)
         
-        # Delete associated data
+        # Delete associated data (CASCADE should handle this, but being explicit)
         conn.execute("DELETE FROM generated_files WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM project_iterations WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM project_collaborators WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         conn.commit()
         
+        logger.info(f"User {request.user_id} deleted project {project_id}")
         return jsonify({"message": "Project deleted successfully"})
     finally:
         conn.close()
@@ -464,11 +600,13 @@ def list_collaborators(project_id):
 def add_collaborator(project_id):
     """Add a collaborator to a project."""
     data = request.get_json() or {}
-    email = data.get("email", "").strip().lower()
+    email = sanitize_text_input(data.get("email", ""), max_length=255).lower()
     role = data.get("role", "viewer").strip()
     
     if not email:
         raise ApiError("Email is required")
+    if not validate_email(email):
+        raise ApiError("Invalid email format")
     if role not in ["viewer", "editor"]:
         raise ApiError("Role must be 'viewer' or 'editor'")
     
@@ -503,6 +641,7 @@ def add_collaborator(project_id):
                 (project_id, user["id"], role)
             )
             conn.commit()
+            logger.info(f"User {request.user_id} added collaborator {user['id']} to project {project_id}")
             return jsonify({
                 "message": "Collaborator added successfully",
                 "user_id": user["id"],
@@ -554,13 +693,18 @@ def remove_collaborator(project_id, user_id):
 def refine_prompt_endpoint():
     """Step 1: Refine user input into a detailed specification."""
     data = request.get_json() or {}
-    user_input = data.get("prompt", "").strip()
+    user_input = sanitize_text_input(data.get("prompt", ""), max_length=10000)
     project_id = data.get("project_id")
+    context = sanitize_text_input(data.get("context", ""), max_length=5000) if data.get("context") else None
 
     if not user_input:
         raise ApiError("Prompt is required")
 
-    refined = refine_user_prompt(user_input, data.get("context"))
+    try:
+        refined = refine_user_prompt(user_input, context)
+    except Exception as e:
+        logger.error(f"Failed to refine prompt: {e}")
+        raise ApiError("Failed to refine prompt. Please try again or simplify your request.", 500)
 
     if project_id:
         conn = get_sqlite_connection()
@@ -574,6 +718,7 @@ def refine_prompt_endpoint():
         finally:
             conn.close()
 
+    logger.info(f"User {request.user_id} refined prompt for project {project_id}")
     return jsonify({"refined": refined, "original": user_input})
 
 
@@ -589,7 +734,11 @@ def generate_plan_endpoint():
     if not refined_spec:
         raise ApiError("Refined specification is required")
 
-    plan = create_system_plan(refined_spec)
+    try:
+        plan = create_system_plan(refined_spec)
+    except Exception as e:
+        logger.error(f"Failed to generate plan: {e}")
+        raise ApiError("Failed to generate plan. Please try again.", 500)
 
     if project_id:
         conn = get_sqlite_connection()
@@ -602,6 +751,7 @@ def generate_plan_endpoint():
         finally:
             conn.close()
 
+    logger.info(f"User {request.user_id} generated plan for project {project_id}")
     return jsonify({"plan": plan})
 
 
@@ -618,20 +768,32 @@ def generate_system_endpoint():
     if not plan or not refined_spec:
         raise ApiError("Plan and refined specification are required")
 
-    logger.info("Generating project files …")
-    files = generate_project_files(plan, refined_spec)
+    try:
+        logger.info("Generating project files …")
+        files = generate_project_files(plan, refined_spec)
 
-    logger.info("Reviewing generated code …")
-    review = review_generated_code(files, plan, refined_spec)
+        logger.info("Reviewing generated code …")
+        review = review_generated_code(files, plan, refined_spec)
 
-    logger.info("Applying refactoring …")
-    final_files, refactor_msg = refactor_code(files, review)
+        logger.info("Applying refactoring …")
+        final_files, refactor_msg = refactor_code(files, review)
+    except Exception as e:
+        logger.error(f"Failed to generate system: {e}")
+        raise ApiError("Failed to generate system. The AI service may be overloaded. Please try again.", 500)
 
     if project_id:
         conn = get_sqlite_connection()
         try:
             conn.execute("DELETE FROM generated_files WHERE project_id = ?", (project_id,))
             for filename, content in final_files.items():
+                # Validate file size - reject if too large
+                if len(content) > 1_000_000:  # 1MB limit per file
+                    logger.error(f"File {filename} exceeds 1MB limit ({len(content)} bytes)")
+                    raise ApiError(
+                        f"Generated file '{filename}' exceeds 1MB limit. "
+                        "Try simplifying your project or breaking it into smaller components.",
+                        400
+                    )
                 file_type = filename.rsplit(".", 1)[-1] if "." in filename else "txt"
                 conn.execute("INSERT INTO generated_files (project_id, filename, content, file_type) VALUES (?, ?, ?, ?)", (project_id, filename, content, file_type))
             conn.execute(
@@ -640,6 +802,7 @@ def generate_system_endpoint():
             )
             conn.execute("UPDATE projects SET status = 'generated', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (project_id,))
             conn.commit()
+            logger.info(f"User {request.user_id} generated system for project {project_id}")
         finally:
             conn.close()
 
@@ -653,7 +816,12 @@ def export_project(project_id):
     """Export project as a downloadable ZIP archive."""
     conn = get_sqlite_connection()
     try:
-        project = conn.execute("SELECT name FROM projects WHERE id = ? AND user_id = ?", (project_id, request.user_id)).fetchone()
+        # Check access (owner or collaborator)
+        has_access, is_owner, role = check_project_access(conn, project_id, request.user_id)
+        if not has_access:
+            raise ApiError("Project not found", 404)
+        
+        project = conn.execute("SELECT name FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
             raise ApiError("Project not found", 404)
 
@@ -667,6 +835,8 @@ def export_project(project_id):
             for f in files:
                 zf.writestr(f"{project_name}/{f['filename']}", f["content"])
         buf.seek(0)
+        
+        logger.info(f"User {request.user_id} exported project {project_id}")
         return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=f"{project_name}.zip")
     finally:
         conn.close()
