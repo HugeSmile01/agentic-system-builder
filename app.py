@@ -55,8 +55,8 @@ if not JWT_SECRET or len(JWT_SECRET) < 32:
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY or len(SECRET_KEY) < 32:
-    logging.error("FATAL: SECRET_KEY must be at least 32 characters")
-    raise RuntimeError("SECRET_KEY environment variable must be at least 32 characters")
+    SECRET_KEY = secrets.token_hex(32)
+    logging.warning("WARNING: SECRET_KEY not set or too short – using auto-generated value. Set SECRET_KEY (min 32 chars) for stable sessions.")
 
 # ---------------------------------------------------------------------------
 # Application factory
