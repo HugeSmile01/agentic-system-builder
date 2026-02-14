@@ -83,7 +83,7 @@ In your Vercel dashboard (Project Settings → Environment Variables), add:
 
 - `GEMINI_KEY` — your Google Gemini API key
 - `JWT_SECRET` — at least 32 characters (generate with: `python -c "import secrets; print(secrets.token_hex(32))"`)
-- `SECRET_KEY` *(optional)* — Flask session secret; auto-generated if omitted
+- `SECRET_KEY` *(optional)* — Flask internal secret; auto-generated if omitted (app uses JWT for auth)
 - `ALLOWED_ORIGINS` — your production domain (e.g., `https://yourdomain.com`)
 
 **Important for Production:**
