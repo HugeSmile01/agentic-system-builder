@@ -132,15 +132,20 @@
       list.innerHTML = data.projects
         .map((p) => {
           const badgeClass = p.status === "generated" ? "badge-generated" : "badge-draft";
-          return `<div class="list-item" onclick="selectProject(${p.id}, '${p.name.replace(/'/g, "\\'")}', '${p.goal ? p.goal.replace(/'/g, "\\'") : ""}')">
+          return `<div class="list-item" data-id="${p.id}" data-name="${esc(p.name)}" data-goal="${esc(p.goal || "")}">
             <div class="list-item-info">
               <strong>${esc(p.name)}</strong>
               <small>${esc(p.goal || "")}</small>
             </div>
-            <span class="badge ${badgeClass}">${p.status}</span>
+            <span class="badge ${badgeClass}">${esc(p.status)}</span>
           </div>`;
         })
         .join("");
+      list.querySelectorAll(".list-item").forEach((el) => {
+        el.addEventListener("click", () => {
+          selectProject(Number(el.dataset.id), el.dataset.name, el.dataset.goal);
+        });
+      });
     } catch (e) {
       list.innerHTML = "<p class='hint'>Failed to load projects.</p>";
     }
@@ -165,7 +170,7 @@
     } catch (e) { toast(e.message, "error"); }
   };
 
-  window.selectProject = (id, name, goal) => {
+  function selectProject(id, name, goal) {
     currentProjectId = id;
     pipelineData = {};
     const section = $("#pipeline-section");
