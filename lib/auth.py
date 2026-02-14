@@ -7,12 +7,17 @@ from functools import wraps
 import jwt
 from flask import request
 
+_jwt_secret_cache = None
+
 def _get_jwt_secret():
-    """Get JWT_SECRET from environment, raising an error if not set."""
-    secret = os.getenv("JWT_SECRET")
-    if not secret:
-        raise RuntimeError("JWT_SECRET environment variable must be set")
-    return secret
+    """Get JWT_SECRET from environment (cached), raising an error if not set."""
+    global _jwt_secret_cache
+    if _jwt_secret_cache is None:
+        secret = os.getenv("JWT_SECRET")
+        if not secret:
+            raise RuntimeError("JWT_SECRET environment variable must be set")
+        _jwt_secret_cache = secret
+    return _jwt_secret_cache
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24

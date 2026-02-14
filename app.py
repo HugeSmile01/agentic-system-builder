@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import zipfile
 from datetime import datetime, timezone
 
@@ -114,14 +115,18 @@ def add_security_headers(response):
 # ---------------------------------------------------------------------------
 
 _env_validated = False
+_env_validation_lock = threading.Lock()
 
 @app.before_request
 def validate_environment_once():
-    """Validate environment variables on the first request."""
+    """Validate environment variables on the first request (thread-safe)."""
     global _env_validated
     if not _env_validated:
-        _validate_environment()
-        _env_validated = True
+        with _env_validation_lock:
+            # Double-check pattern to avoid race condition
+            if not _env_validated:
+                _validate_environment()
+                _env_validated = True
 
 
 # ---------------------------------------------------------------------------
