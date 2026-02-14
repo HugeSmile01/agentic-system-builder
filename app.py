@@ -42,6 +42,8 @@ from lib.agents import (
 # Application factory
 # ---------------------------------------------------------------------------
 
+API_VERSION = "3.1.0"
+
 app = Flask(__name__, static_folder="static")
 app.config.update(
     JSON_SORT_KEYS=False,
@@ -232,11 +234,8 @@ def forgot_password():
         if user:
             token = generate_password_reset_token(email)
             # In production, send this token via email
-            logger.info(f"Password reset token for {email}: {token}")
-            return jsonify({
-                "message": "If an account exists with this email, a reset link has been sent",
-                "reset_token": token  # Remove this in production!
-            })
+            logger.info(f"Password reset token generated for {email}")
+            # TODO: Send email with reset link
         
         return jsonify({
             "message": "If an account exists with this email, a reset link has been sent"
@@ -298,27 +297,29 @@ def list_projects():
     
     conn = get_sqlite_connection()
     try:
-        # Build query
-        query = "SELECT * FROM projects WHERE user_id = ?"
+        # Build WHERE clause
+        where_clauses = ["user_id = ?"]
         params = [request.user_id]
         
         if search:
-            query += " AND (name LIKE ? OR description LIKE ? OR goal LIKE ?)"
+            where_clauses.append("(name LIKE ? OR description LIKE ? OR goal LIKE ?)")
             search_pattern = f"%{search}%"
             params.extend([search_pattern, search_pattern, search_pattern])
         
         if status_filter:
-            query += " AND status = ?"
+            where_clauses.append("status = ?")
             params.append(status_filter)
         
+        where_clause = " WHERE " + " AND ".join(where_clauses)
+        
         # Get total count
-        count_query = query.replace("SELECT *", "SELECT COUNT(*)")
+        count_query = f"SELECT COUNT(*) FROM projects{where_clause}"
         total = conn.execute(count_query, params).fetchone()[0]
         
         # Get paginated results
-        query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
-        params.extend([per_page, offset])
-        rows = conn.execute(query, params).fetchall()
+        query = f"SELECT * FROM projects{where_clause} ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+        params_with_pagination = params + [per_page, offset]
+        rows = conn.execute(query, params_with_pagination).fetchall()
         
         return jsonify({
             "projects": [dict(r) for r in rows],
@@ -683,7 +684,7 @@ def health():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "gemini_configured": bool(GEMINI_KEY),
         "supabase_configured": bool(SUPABASE_URL and SUPABASE_KEY),
-        "version": "3.1.0",
+        "version": API_VERSION,
     }
     
     # Check database connectivity
@@ -710,7 +711,7 @@ def index():
 def api_info():
     return jsonify({
         "service": "Agentic System Builder API",
-        "version": "3.1.0",
+        "version": API_VERSION,
         "author": "John Rish Ladica – SLSU-HC SITS",
         "endpoints": {
             "health": "/health",
